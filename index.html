@@ -111,9 +111,11 @@ function countSections(list){return rows.filter(r=>list.includes(r.section)).red
 function timerText(sec){sec=Math.max(0,Math.floor(sec));let d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);return [d?d+' T':'',h?h+' Std.':'',m?m+' Min.':''].filter(Boolean).join(' ')||(sec>0?'< 1 Min.':'Abgeschlossen')}
 function remainingTimer(r){let stamp=Number(data?.timestamp||0);if(!stamp)return r.timer;let elapsed=Math.max(0,Date.now()/1000-stamp);return Math.max(0,r.timer-elapsed)}
 let gameCatalog=new Map(),gameCatalogPromise=null,gameCatalogError='';
-const GAME_DATA_VERSION='0.19.1';
+const GAME_DATA_VERSION='0.19.1'; // Nicht alle TH19-Neuerungen sind in diesem Paket enthalten; Helden-Caps werden separat gepflegt.
 const GAME_DATA_URL=`https://cdn.jsdelivr.net/npm/clash-of-clans-data@${GAME_DATA_VERSION}/+esm`;
 const HERO_CAP_KEYS={28000000:'barbarianKing',28000001:'archerQueen',28000002:'grandWarden',28000004:'royalChampion',28000006:'minionPrince',28000007:'dragonDuke'};
+const HERO_CAPS_BY_TH={7:{barbarianKing:10},8:{barbarianKing:20,archerQueen:10},9:{barbarianKing:30,archerQueen:30,minionPrince:10},10:{barbarianKing:40,archerQueen:40,minionPrince:20},11:{barbarianKing:50,archerQueen:50,minionPrince:30,grandWarden:20},12:{barbarianKing:65,archerQueen:65,minionPrince:40,grandWarden:40},13:{barbarianKing:75,archerQueen:75,minionPrince:50,grandWarden:50,royalChampion:25},14:{barbarianKing:85,archerQueen:85,minionPrince:60,grandWarden:60,royalChampion:30},15:{barbarianKing:90,archerQueen:90,minionPrince:70,grandWarden:65,royalChampion:40,dragonDuke:10},16:{barbarianKing:95,archerQueen:95,minionPrince:80,grandWarden:70,royalChampion:45,dragonDuke:15},17:{barbarianKing:100,archerQueen:100,minionPrince:90,grandWarden:75,royalChampion:50,dragonDuke:20},18:{barbarianKing:110,archerQueen:110,minionPrince:95,grandWarden:85,royalChampion:55,dragonDuke:25},19:{barbarianKing:115,archerQueen:115,minionPrince:100,grandWarden:90,royalChampion:60,dragonDuke:30}};
+function heroCapAtTownHall(heroId,townHall){const key=HERO_CAP_KEYS[Number(heroId)];if(!key||!townHall)return null;const hallTown=Math.min(19,Math.floor(Number(townHall)));let cap=null;for(let th=7;th<=hallTown;th++)if(HERO_CAPS_BY_TH[th]?.[key]!==undefined)cap=HERO_CAPS_BY_TH[th][key];return cap;}
 function queryData(q){try{return q&&typeof q.get==='function'?q.get():[]}catch{return []}}
 async function loadGameCatalog(force=false){
  if(gameCatalogPromise&&!force)return gameCatalogPromise;
@@ -153,13 +155,18 @@ function capContext(){
 function autoMaxLevel(r,ctx=capContext()){
  if(r.village==='home'&&!ctx.th)return null;
  if(r.village==='builder'&&!ctx.bh)return null;
- const item=catalogItem(r.section,r.id);if(!item)return null;
  if(r.section==='heroes'){
+  // Hero caps are maintained here because the bundled community data package can lag behind live balance updates.
+  const fallback=heroCapAtTownHall(r.id,ctx.th);
+  if(fallback!==null)return fallback;
+  const item=catalogItem(r.section,r.id);
+  if(!item)return null;
   const hall=catalogItem('buildings',1000071),maxHall=ctx.heroHall;
   const hallLevel=hall?.levels?.filter(l=>(l.townHallRequired===undefined||Number(l.townHallRequired)<=ctx.th)&&Number(l.level)<=maxHall).sort((a,b)=>b.level-a.level)[0];
   const cap=hallLevel?.heroLevelCaps?.[HERO_CAP_KEYS[Number(r.id)]];
   return Number.isFinite(Number(cap))?Number(cap):maxLevelByRequirement(item,'heroHallLevelRequired',maxHall);
  }
+ const item=catalogItem(r.section,r.id);if(!item)return null;
  const eligible=item.levels.filter(l=>{
   if(l.townHallRequired!==undefined&&Number(l.townHallRequired)>ctx.th&&r.village!=='builder')return false;
   if(r.section==='units'||r.section==='spells'||r.section==='siege_machines'){
