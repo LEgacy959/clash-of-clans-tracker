@@ -1,7 +1,3 @@
-const HERO_CAP_KEYS = window.COC_MAX_LEVEL_DATA?.heroCapKeys || {};
-const HERO_CAPS_BY_TH = window.COC_MAX_LEVEL_DATA?.heroCapsByTownHall || {};
-function heroCapAtTownHall(heroId,townHall){const key=HERO_CAP_KEYS[Number(heroId)];if(!key||!townHall)return null;const hallTown=Math.min(19,Math.floor(Number(townHall)));let cap=null;for(let th=7;th<=hallTown;th++)if(HERO_CAPS_BY_TH[th]?.[key]!==undefined)cap=HERO_CAPS_BY_TH[th][key];return cap;}
-
 const keys={buildings:'Gebäude',traps:'Fallen',decos:'Dekorationen',obstacles:'Hindernisse',units:'Truppen',siege_machines:'Belagerungsmaschinen',heroes:'Helden',spells:'Zauber',pets:'Begleiter',equipment:'Ausrüstung',helpers:'Helfer',guardians:'Wächter',buildings2:'Bauarbeiterbasis-Gebäude',traps2:'Bauarbeiterbasis-Fallen',decos2:'Bauarbeiterbasis-Dekorationen',obstacles2:'Bauarbeiterbasis-Hindernisse',units2:'Bauarbeiterbasis-Truppen',heroes2:'Bauarbeiterbasis-Helden'};
 const names={
  buildings:{
@@ -29,20 +25,42 @@ function load(){try{meta=JSON.parse(localStorage.getItem(META)||localStorage.get
 function saveMeta(){try{localStorage.setItem(META,JSON.stringify(meta))}catch(e){alert('Speichern fehlgeschlagen. Bitte exportiere ein Backup und prüfe den Speicherplatz im Browser.');throw e}}function key(r){return r.section+':'+r.index}
 function itemName(section,id){return names[section]?.[id]||null}
 function village(section){return ['buildings2','traps2','decos2','obstacles2','units2','heroes2'].includes(section)?'builder':'home'}
-function buildRows(){rows=[];Object.entries(keys).forEach(([k,label])=>(data[k]||[]).forEach((v,i)=>rows.push({section:k,label,id:v.data??v.id??'unbekannt',lvl:Number(v.lvl??0),cnt:Number(v.cnt??1),timer:Number(v.timer??0),extra:v.extra??null,index:i,name:itemName(k,v.data??v.id),village:village(k)})));
+function splitDefenseStacks(){
+ if(!data||!defenseKeys.size)return false;
+ let changed=false;
+ ['buildings','traps','buildings2','traps2'].forEach(section=>{
+  const items=data[section]||[];
+  for(let i=0;i<items.length;i++){
+   const item=items[i],count=Number(item.cnt??1),id=Number(item.data??item.id);
+   if(!defenseKeys.has(section+':'+id)||!Number.isSafeInteger(count)||count<=1)continue;
+   const original={...item};
+   item.cnt=1;
+   for(let instance=1;instance<count;instance++)items.push({...original,cnt:1,timer:0});
+   changed=true;
+  }
+ });
+ if(changed)localStorage.setItem(DATA,JSON.stringify(data));
+ return changed;
+}
+function buildRows(){splitDefenseStacks();rows=[];Object.entries(keys).forEach(([k,label])=>(data[k]||[]).forEach((v,i)=>rows.push({section:k,label,id:v.data??v.id??'unbekannt',lvl:Number(v.lvl??0),cnt:Number(v.cnt??1),timer:Number(v.timer??0),extra:v.extra??null,index:i,name:itemName(k,v.data??v.id),village:village(k)})));
  // Migrate metadata saved by the older section:index scheme to stable item keys.
  let changed=false; rows.forEach(r=>{let now=key(r),oldLevel=r.section+':'+r.id+':level:'+r.lvl,oldTimer=r.section+':'+r.id+':timer:'+r.index,old= r.timer>0?oldTimer:oldLevel; if(meta.items[old]&&!meta.items[now]){meta.items[now]=meta.items[old];changed=true} if(meta.builders[old]&&!meta.builders[now]){meta.builders[now]=meta.builders[old];changed=true}}); if(changed)saveMeta();
 }
 function importRaw(raw){try{let incoming=JSON.parse(String(raw).replace(/^\uFEFF/,''));let nextData, nextMeta=meta;if(incoming&&incoming.export&&incoming.tracker){nextData=parse(JSON.stringify(incoming.export));nextMeta={items:incoming.tracker.items||meta.items||{},builders:incoming.tracker.builders||meta.builders||{},plans:Array.isArray(incoming.tracker.plans)?incoming.tracker.plans:meta.plans||[]}}else nextData=parse(raw);if(data&&!confirm('Vorhandenen Spielstand durch den Import ersetzen? Exportiere vorher ein Backup, wenn du den alten Stand behalten möchtest.'))return;localStorage.setItem(DATA,JSON.stringify(nextData));data=nextData;meta=nextMeta;saveMeta();buildRows();update();document.getElementById('importmsg').textContent='Import erfolgreich: '+rows.length+' Datensätze erkannt. Deine Daten bleiben lokal auf diesem Gerät.';show('dashboard')}catch(e){document.getElementById('importmsg').textContent='Import fehlgeschlagen: '+e.message}}
 document.getElementById('file').addEventListener('change',async e=>{let f=e.target.files[0];if(f){try{if(f.size>10*1024*1024)throw Error('Datei ist größer als 10 MB.');importRaw(await f.text())}catch(err){document.getElementById('importmsg').textContent='Datei konnte nicht gelesen werden: '+err.message}e.target.value=''}});function importPaste(){importRaw(document.getElementById('paste').value)}
-function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.5.0',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.3',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 function clearData(){if(confirm('Spielstand und Tracker-Metadaten auf diesem Gerät wirklich löschen?')){localStorage.removeItem(DATA);localStorage.removeItem(META);data=null;rows=[];meta={items:{},builders:{},plans:[]};update();show('dashboard')}}
 function count(k){return rows.filter(r=>r.section===k).reduce((n,r)=>n+r.cnt,0)}function timers(){return rows.filter(r=>r.timer>0)}
 function countSections(list){return rows.filter(r=>list.includes(r.section)).reduce((n,r)=>n+r.cnt,0)}
 function timerText(sec){sec=Math.max(0,Math.floor(sec));let d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);return [d?d+' T':'',h?h+' Std.':'',m?m+' Min.':''].filter(Boolean).join(' ')||(sec>0?'< 1 Min.':'Abgeschlossen')}
 function remainingTimer(r){let stamp=Number(data?.timestamp||0);if(!stamp)return r.timer;let elapsed=Math.max(0,Date.now()/1000-stamp);return Math.max(0,r.timer-elapsed)}
-let gameCatalog=new Map(),gameCatalogPromise=null,gameCatalogError='';
-const GAME_DATA_VERSION='0.19.1'; // Nicht alle TH19-Neuerungen sind in diesem Paket enthalten; Helden-Caps werden separat gepflegt.
+let gameCatalog=new Map(),gameCatalogPromise=null,gameCatalogError='',defenseKeys=new Set();
+let wikiLevelData=null,wikiLevelPromise=null,wikiLevelError='',wikiLevelStale=false;
+let wikiItemPromise=null;
+const WIKI_CACHE_KEY='clash-progress-wiki-levels-v4';
+const WIKI_CACHE_MAX_AGE=24*60*60*1000;
+const WIKI_API='https://clashofclans.fandom.com/api.php';
+const GAME_DATA_VERSION='0.19.1';
 const GAME_DATA_URL=`https://cdn.jsdelivr.net/npm/clash-of-clans-data@${GAME_DATA_VERSION}/+esm`;
 function queryData(q){try{return q&&typeof q.get==='function'?q.get():[]}catch{return []}}
 async function loadGameCatalog(force=false){
@@ -52,67 +70,426 @@ async function loadGameCatalog(force=false){
  gameCatalogPromise=(async()=>{
   try{
    const coc=await import(GAME_DATA_URL),home=coc.home(),builder=coc.builder();
+   const homeDefenses=queryData(home.defenses()),homeCraftedDefenses=queryData(home.craftedDefenses()),homeTraps=queryData(home.traps());
+   const builderDefenses=queryData(builder.defenses()),builderTraps=queryData(builder.traps());
    const groups={
-    buildings:[...queryData(home.defenses()),...queryData(home.craftedDefenses()),...queryData(home.resourceBuildings()),...queryData(home.armyBuildings()),...queryData(home.otherBuildings()),...queryData(home.townHall()),...queryData(home.walls())],
-    traps:queryData(home.traps()),units:queryData(home.troops()),siege_machines:queryData(home.siegeMachines()),heroes:queryData(home.heroes()),spells:queryData(home.spells()),pets:queryData(home.pets()),equipment:queryData(home.heroEquipment()),guardians:queryData(home.guardians()),
-    buildings2:[...queryData(builder.defenses()),...queryData(builder.resourceBuildings()),...queryData(builder.armyBuildings()),...queryData(builder.builderHall()),...queryData(builder.otherBuildings()),...queryData(builder.walls())],
-    traps2:queryData(builder.traps()),units2:queryData(builder.troops()),heroes2:queryData(builder.heroes())
+    buildings:[...homeDefenses,...homeCraftedDefenses,...queryData(home.resourceBuildings()),...queryData(home.armyBuildings()),...queryData(home.otherBuildings()),...queryData(home.townHall()),...queryData(home.walls())],
+    traps:homeTraps,units:queryData(home.troops()),siege_machines:queryData(home.siegeMachines()),heroes:queryData(home.heroes()),spells:queryData(home.spells()),pets:queryData(home.pets()),equipment:queryData(home.heroEquipment()),guardians:queryData(home.guardians()),
+    buildings2:[...builderDefenses,...queryData(builder.resourceBuildings()),...queryData(builder.armyBuildings()),...queryData(builder.builderHall()),...queryData(builder.otherBuildings()),...queryData(builder.walls())],
+    traps2:builderTraps,units2:queryData(builder.troops()),heroes2:queryData(builder.heroes())
    };
    const next=new Map();
-   Object.entries(groups).forEach(([section,items])=>items.forEach(item=>{const id=Number(item.dataId??item.id);if(Number.isFinite(id)&&Array.isArray(item.levels))next.set(section+':'+id,item)}));
+   Object.entries(groups).forEach(([section,items])=>items.forEach(item=>{const id=Number(item.dataId??item.id);if(Number.isFinite(id)&&typeof item.name==='string')next.set(section+':'+id,item)}));
    if(next.size<80)throw new Error('Die Spieldatenbank wurde unvollständig geladen.');
+   const defenseKeysFor=(section,items)=>items.map(item=>Number(item.dataId??item.id)).filter(Number.isFinite).map(id=>section+':'+id);
+   defenseKeys=new Set([...defenseKeysFor('buildings',[...homeDefenses,...homeCraftedDefenses]),...defenseKeysFor('traps',homeTraps),...defenseKeysFor('buildings2',builderDefenses),...defenseKeysFor('traps2',builderTraps)]);
    gameCatalog=next;
+   if(data)buildRows();
    return true;
   }catch(e){gameCatalogError=e?.message||'Spieldaten konnten nicht geladen werden.';gameCatalog=new Map();return false}
  })();
  return gameCatalogPromise;
 }
 function catalogItem(section,id){return gameCatalog.get(section+':'+Number(id))||null}
-function maxLevelByRequirement(item,requirementKey,limit){if(!item||!Array.isArray(item.levels))return null;const levels=item.levels.filter(l=>l&&Number.isFinite(Number(l.level))&&(l[requirementKey]===undefined||Number(l[requirementKey])<=limit));return levels.length?Math.max(...levels.map(l=>Number(l.level))):null}
-function maxBuildingAtTownHall(id,th){return maxLevelByRequirement(catalogItem('buildings',id),'townHallRequired',th)}
-function maxBuilderBuildingAtHall(id,bh){
- const item=catalogItem('buildings2',id);if(!item)return null;
- const reqKeys=['builderHallRequired','builderHallLevelRequired'];
- const levels=item.levels.filter(l=>l&&reqKeys.every(k=>l[k]===undefined||Number(l[k])<=bh));
- return levels.length?Math.max(...levels.map(l=>Number(l.level))):null;
+const WIKI_SPECIAL_NAMES={
+ buildings:{1000000:'Army Camp',1000001:'Town Hall',1000002:'Elixir Collector',1000003:'Elixir Storage',1000004:'Gold Mine',1000005:'Gold Storage',1000006:'Barracks',1000007:'Laboratory',1000008:'Cannon',1000009:'Archer Tower',1000010:'Wall',1000011:'Wizard Tower',1000012:'Air Defense',1000013:'Mortar',1000014:'Clan Castle',1000015:"Builder's Hut",1000019:'Hidden Tesla',1000020:'Spell Factory',1000021:'X-Bow',1000023:'Dark Elixir Drill',1000024:'Dark Elixir Storage',1000026:'Dark Barracks',1000027:'Inferno Tower',1000028:'Air Sweeper',1000029:'Dark Spell Factory',1000031:'Eagle Artillery',1000032:'Bomb Tower',1000059:'Workshop',1000064:"B.O.B's Hut",1000067:'Scattershot',1000068:'Pet House',1000070:'Blacksmith',1000071:'Hero Hall',1000072:'Spell Tower',1000077:'Monolith',1000079:'Multi-Gear Tower',1000084:'Multi-Archer Tower',1000085:'Ricochet Cannon',1000086:'Revenge Tower',1000089:'Firespitter',1000093:'Helper Hut',1000097:'Crafting Station',1000102:'Super Wizard Tower'},
+ traps:{12000000:'Bomb',12000001:'Spring Trap',12000002:'Giant Bomb',12000005:'Air Bomb',12000006:'Seeking Air Mine',12000008:'Skeleton Trap',12000016:'Tornado Trap',12000020:'Giga Bomb'},
+ buildings2:{1000033:'Wall',1000034:'Builder Hall',1000035:'Elixir Collector',1000036:'Elixir Storage',1000037:'Gold Mine',1000038:'Gold Storage',1000039:'Clock Tower',1000040:'Builder Barracks',1000041:'Double Cannon',1000042:'Army Camp',1000043:'Hidden Tesla',1000044:'Cannon',1000045:'Multi Mortar',1000046:'Star Laboratory',1000047:"B.O.T.O's Shack",1000048:'Archer Tower',1000049:'Reinforcement Camp',1000050:'Firecrackers',1000051:'Guard Post',1000052:'Mega Tesla',1000053:'Battle Machine Altar',1000054:'Air Bombs',1000055:'Crusher',1000056:'Roaster',1000057:'Giant Cannon',1000058:'Gem Mine',1000063:'Lava Launcher',1000065:'B.O.B Control',1000078:"O.T.T.O's Outpost",1000080:'Battle Copter Altar',1000081:'X-Bow',1000082:'Healing Hut'},
+ traps2:{12000010:'Push Trap',12000011:'Spring Trap',12000013:'Mine',12000014:'Mega Mine'},
+ helpers:{93000000:"Builder's Apprentice",93000001:'Lab Assistant',93000002:'Prospector',93000003:'Alchemist'},
+ guardians:{107000000:'Longshot',107000001:'Smasher',107000008:'Logger'}
+};
+function wikiNameKey(name){return String(name||'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]/g,'')}
+function wikiItemName(r){return WIKI_SPECIAL_NAMES[r.section]?.[Number(r.id)]||catalogItem(r.section,r.id)?.name||''}
+function wikiItemKey(r){return wikiNameKey(wikiItemName(r))}
+function wikiCellText(cell){return String(cell?.textContent||'').replace(/\s+/g,' ').trim()}
+function expandWikiTable(table){
+ const grid=[];
+ [...table.rows].forEach((tr,rowIndex)=>{
+  grid[rowIndex]=grid[rowIndex]||[];
+  let col=0;
+  [...tr.cells].forEach(cell=>{
+   while(grid[rowIndex][col]!==undefined)col++;
+   const rowSpan=Math.max(1,Number(cell.rowSpan)||1),colSpan=Math.max(1,Number(cell.colSpan)||1),text=wikiCellText(cell);
+   for(let r=rowIndex;r<rowIndex+rowSpan;r++){
+    grid[r]=grid[r]||[];
+    for(let c=col;c<col+colSpan;c++)if(grid[r][c]===undefined)grid[r][c]=text;
+   }
+   col+=colSpan;
+  });
+ });
+ return grid.map(row=>row.map(cell=>cell||''));
 }
+function wikiNumber(value){
+ const text=String(value||'').replace(/,/g,'').trim();
+ if(!text||/^[-–—]+$/.test(text)||/^ruin$/i.test(text))return null;
+ const bonus=text.match(/(\d+)\s*\+\s*(\d+)/);
+ if(bonus)return Number(bonus[1])+Number(bonus[2]);
+ const numbers=text.match(/\d+/g);
+ return numbers?.length?Math.max(...numbers.map(Number)):null;
+}
+function wikiHallRange(value){
+ const text=String(value||'').trim(),range=text.match(/^(\d+)\s*[-–—]\s*(\d+)$/);
+ if(range)return [Number(range[1]),Number(range[2])];
+ const level=wikiNumber(text);
+ return level===null?null:[level,level];
+}
+function putWikiCap(map,name,requirement,cap){
+ const key=wikiNameKey(name),req=Number(requirement);
+ if(!key||!Number.isFinite(req)||!Number.isFinite(cap)||cap<=0)return;
+ map[key]=map[key]||{};
+ map[key][req]=Math.max(Number(map[key][req])||0,cap);
+}
+function parseHallTables(tables,map){
+ let found=0,maxHall=0;
+ tables.forEach(table=>{
+  const grid=expandWikiTable(table),headerIndex=grid.findIndex(row=>['thlevel','townhalllevel','builderhall','builderhalllevel'].includes(wikiNameKey(row[0])));
+  if(headerIndex<0)return;
+  const header=grid[headerIndex];
+  for(let rowIndex=headerIndex+1;rowIndex<grid.length;rowIndex++){
+   const hallRange=wikiHallRange(grid[rowIndex][0]);
+   if(!hallRange)continue;
+   for(let hall=hallRange[0];hall<=hallRange[1];hall++)maxHall=Math.max(maxHall,hall);
+   for(let col=1;col<header.length;col++){
+    const cap=wikiNumber(grid[rowIndex][col]);
+    if(cap===null)continue;
+    const itemNames=header[col]==='Gold Mine & Elixir Collector'?['Gold Mine','Elixir Collector']:
+     header[col]==='Gold Mines & Elixir Collectors'?['Gold Mine','Elixir Collector']:
+     /^Gold\s*&\s*Elixir Storages?$/i.test(header[col])?['Gold Storage','Elixir Storage']:
+     /^Walls?$/i.test(header[col])?['Wall']:[header[col].replace(/[†*]+/g,'').trim()];
+    itemNames.forEach(name=>{for(let hall=hallRange[0];hall<=hallRange[1];hall++)putWikiCap(map,name,hall,cap)});
+    found++;
+   }
+  }
+ });
+ return {found,maxHall};
+}
+function parseHeroHallChart(doc){
+ const table=[...doc.querySelectorAll('table')].find(t=>expandWikiTable(t).some(row=>row.some(cell=>wikiNameKey(cell)==='herohalllevel')));
+ if(!table)throw Error('Die Heldenhallen-Tabelle fehlt im Wiki.');
+ const grid=expandWikiTable(table),headIndex=grid.findIndex(row=>wikiNameKey(row[0])==='herohalllevel'),head=grid[headIndex],caps={};
+ for(let r=headIndex+1;r<grid.length;r++){
+  const hall=wikiNumber(grid[r][0]);if(!hall)continue;
+  for(let c=1;c<head.length;c++){const cap=wikiNumber(grid[r][c]);if(cap!==null)putWikiCap(caps,head[c],hall,cap)}
+ }
+ return caps;
+}
+function parseUpgradeChart(doc,hallLabel){
+ const caps={};let found=0;
+ [...doc.querySelectorAll('table')].forEach(table=>{
+  const grid=expandWikiTable(table),headerIndex=grid.findIndex(row=>row.length>3&&row.slice(2).filter(value=>/^\d+$/.test(value)).length>=3);
+  if(headerIndex<0)return;
+  const hallLevels=grid[headerIndex].slice(2).map(value=>wikiNumber(value));
+  for(let r=headerIndex+1;r<grid.length;r++){
+   if(wikiNameKey(grid[r][1])!=='level'||!grid[r][0])continue;
+   const name=grid[r][0],nameKey=wikiNameKey(name);
+   if(!nameKey)continue;
+   caps[nameKey]=caps[nameKey]||{};
+   let cap=0;
+   const firstHall=hallLevels.find(level=>Number.isFinite(level));
+   if(firstHall)cap=capAtRequirement(caps[nameKey],firstHall-1)||0;
+   hallLevels.forEach((hall,index)=>{
+    if(!Number.isFinite(hall))return;
+    const value=wikiNumber(grid[r][index+2]);
+    if(value!==null)cap=Math.max(cap,value);
+    if(cap>0)caps[nameKey][hall]=Math.max(Number(caps[nameKey][hall])||0,cap);
+   });
+   if(Object.keys(caps[nameKey]).length)found++;
+  }
+ });
+ if(!found)throw Error(`${hallLabel}-Tabelle enthält keine lesbaren Levelwerte.`);
+ return caps;
+}
+function parsePetHouseChart(doc){
+ const table=[...doc.querySelectorAll('table')].find(t=>expandWikiTable(t).some(row=>wikiNameKey(row[0])==='pethouselevel'));
+ if(!table)throw Error('Die Haustierhaus-Tabelle fehlt im Wiki.');
+ const grid=expandWikiTable(table),headerIndex=grid.findIndex(row=>wikiNameKey(row[0])==='pethouselevel'),headers=grid[headerIndex+1]||[],caps={};
+ for(let r=headerIndex+2;r<grid.length;r++){
+  const house=wikiNumber(grid[r][0]);if(!house)continue;
+  for(let c=1;c<headers.length;c++){const cap=wikiNumber(grid[r][c]);if(cap!==null)putWikiCap(caps,headers[c],house,cap)}
+ }
+ return caps;
+}
+function parseBlacksmithChart(doc){
+ const table=[...doc.querySelectorAll('table')].find(t=>expandWikiTable(t).some(row=>row.some(cell=>wikiNameKey(cell)==='common')&&row.some(cell=>wikiNameKey(cell)==='epic')));
+ if(!table)throw Error('Die Schmiede-Tabelle fehlt im Wiki.');
+ const grid=expandWikiTable(table),headIndex=grid.findIndex(row=>row.some(cell=>wikiNameKey(cell)==='common')&&row.some(cell=>wikiNameKey(cell)==='epic')),head=grid[headIndex],common=head.findIndex(cell=>wikiNameKey(cell)==='common'),epic=head.findIndex(cell=>wikiNameKey(cell)==='epic'),caps={common:{},epic:{}};
+ for(let r=headIndex+1;r<grid.length;r++){
+  const level=wikiNumber(grid[r][0]);if(!level)continue;
+  const commonCap=wikiNumber(grid[r][common]),epicCap=wikiNumber(grid[r][epic]);
+  if(commonCap!==null)caps.common[level]=commonCap;
+  if(epicCap!==null)caps.epic[level]=epicCap;
+ }
+ return caps;
+}
+function parseRequirementChart(doc,expectedRequirement,itemName){
+ const tables=[...doc.querySelectorAll('table')];
+ for(const table of tables){
+  const grid=expandWikiTable(table),headIndex=grid.findIndex(row=>row.some(cell=>wikiNameKey(cell)==='level')&&row.some(cell=>wikiNameKey(cell)===wikiNameKey(expectedRequirement)));
+  if(headIndex<0)continue;
+  const head=grid[headIndex],levelColumn=head.findIndex(cell=>wikiNameKey(cell)==='level'),reqColumn=head.findIndex(cell=>wikiNameKey(cell)===wikiNameKey(expectedRequirement)),caps={};
+  for(let r=headIndex+1;r<grid.length;r++){
+   const level=wikiNumber(grid[r][levelColumn]),req=wikiNumber(grid[r][reqColumn]);
+   if(level!==null)putWikiCap(caps,itemName,req===null?1:req,level);
+  }
+  if(caps[wikiNameKey(itemName)])return caps[wikiNameKey(itemName)];
+ }
+ throw Error(`Keine Levelwerte mit Voraussetzung „${expectedRequirement}“ gefunden.`);
+}
+function parseGuardianChart(doc,itemName){
+ const table=[...doc.querySelectorAll('table')].find(t=>expandWikiTable(t).some(row=>row.some(cell=>wikiNameKey(cell)==='level')));
+ if(!table)throw Error('Die Wächter-Leveltabelle fehlt im Wiki.');
+ const grid=expandWikiTable(table),headIndex=grid.findIndex(row=>row.some(cell=>wikiNameKey(cell)==='level')),head=grid[headIndex],levelColumn=head.findIndex(cell=>wikiNameKey(cell)==='level'),thColumn=head.findIndex(cell=>wikiNameKey(cell)==='townhalllevelrequired'),caps={};
+ for(let r=headIndex+1;r<grid.length;r++){
+  const level=wikiNumber(grid[r][levelColumn]),th=thColumn<0?1:wikiNumber(grid[r][thColumn]);
+  if(level!==null)putWikiCap(caps,itemName,th===null?1:th,level);
+ }
+ return caps[wikiNameKey(itemName)]||{};
+}
+function parseFixedBuildingChart(doc,itemName,hallLabel){
+ const hallHeader=wikiNameKey(hallLabel),caps={};
+ [...doc.querySelectorAll('table')].forEach(table=>{
+  const grid=expandWikiTable(table);
+  for(let r=0;r<grid.length-1;r++){
+   const first=wikiNameKey(grid[r][0]),isHallHeader=[hallHeader,`${hallHeader}level`].includes(first),isContinuedHeader=!first&&grid[r].slice(1).filter(value=>/^\d+$/.test(value)).length>=2;
+   if(!isHallHeader&&!isContinuedHeader)continue;
+   const counts=grid[r+1];if(wikiNameKey(counts[0])!=='numberavailable'&&counts[0]!=='')continue;
+   grid[r].slice(1).forEach((value,index)=>{
+    const level=wikiNumber(value),count=wikiNumber(counts[index+1]);
+    if(level&&count>0)putWikiCap(caps,itemName,level,1);
+   });
+  }
+ });
+ return caps[wikiNameKey(itemName)]||{};
+}
+function parseFixedRequirementChart(doc,itemName,requirement){
+ const reqKey=wikiNameKey(requirement);
+ for(const table of doc.querySelectorAll('table')){
+  const grid=expandWikiTable(table),headIndex=grid.findIndex(row=>row.some(cell=>wikiNameKey(cell)===reqKey));
+  if(headIndex<0)continue;
+  const column=grid[headIndex].findIndex(cell=>wikiNameKey(cell)===reqKey),value=wikiNumber(grid[headIndex+1]?.[column]);
+  if(value)return {[value]:1};
+ }
+ return {};
+}
+function parseFixedBuilderAvailability(doc,itemName){
+ const caps={};
+ [...doc.querySelectorAll('table')].forEach(table=>{
+  const grid=expandWikiTable(table);
+  for(let r=0;r<grid.length-1;r++){
+   if(wikiNameKey(grid[r][0])!=='total')continue;
+   const levels=grid[r-1]||[];
+   levels.slice(1).forEach((value,index)=>{
+    const level=wikiNumber(value),count=wikiNumber(grid[r][index+1]);
+    if(level&&count>0)putWikiCap(caps,itemName,level,1);
+   });
+  }
+ });
+ return caps[wikiNameKey(itemName)]||{};
+}
+async function wikiApi(params){
+ const url=new URL(WIKI_API);
+ Object.entries({...params,origin:'*',format:'json'}).forEach(([key,value])=>url.searchParams.set(key,String(value)));
+ const response=await fetch(url.toString());
+ if(!response.ok)throw Error(`Clash Wiki antwortet mit HTTP ${response.status}.`);
+ const result=await response.json();
+ if(result.error){const error=Error(result.error.info||'Clash Wiki lieferte einen API-Fehler.');error.code=result.error.code;throw error}
+ return result;
+}
+async function wikiSections(pageName,sectionNames){
+ const sectionResult=await wikiApi({action:'parse',page:pageName,prop:'sections'}),sections=sectionResult.parse?.sections||[];
+ const selected=sectionNames.map(name=>({name,section:sections.find(s=>s.line.toLowerCase()===name.toLowerCase())}));
+ const missing=selected.find(item=>!item.section);
+ if(missing&&sections.length===0&&sectionNames.length===1&&sectionNames[0]==='Statistics'){
+  const parsed=await wikiApi({action:'parse',page:pageName,prop:'text'}),html=parsed.parse?.text?.['*'];
+  if(typeof html!=='string')throw Error(`Wiki-Seite ${pageName} enthält keinen lesbaren Inhalt.`);
+  return {sections:{Statistics:new DOMParser().parseFromString(html,'text/html')},revision:parsed.parse?.revid||sectionResult.parse?.revid||null};
+ }
+ if(missing)throw Error(`Der Abschnitt „${missing.name}“ fehlt auf der Wiki-Seite ${pageName}.`);
+ const results=await Promise.all(selected.map(async item=>{
+  const parsed=await wikiApi({action:'parse',page:pageName,prop:'text',section:item.section.index});
+  const html=parsed.parse?.text?.['*'];
+  if(typeof html!=='string')throw Error(`Wiki-Abschnitt „${item.name}“ auf ${pageName} enthält keinen lesbaren Inhalt.`);
+  return {name:item.name,doc:new DOMParser().parseFromString(html,'text/html'),revision:parsed.parse?.revid||sectionResult.parse?.revid||null};
+ }));
+ return {sections:Object.fromEntries(results.map(result=>[result.name,result.doc])),revision:results[0]?.revision||sectionResult.parse?.revid||null};
+}
+function missingWikiItemRows(){
+ if(!wikiLevelData?.itemCaps)return [];
+ return [...new Map(rows.filter(r=>['buildings','traps','buildings2','traps2'].includes(r.section)&&
+  !((r.section==='buildings'&&Number(r.id)===1000001)||(r.section==='buildings2'&&Number(r.id)===1000034))&&
+  !wikiLevelData.itemCaps.checked?.[r.section+':'+r.id]).map(r=>[r.section+':'+r.id,r])).values()];
+}
+async function fetchWikiItemCaps(items){
+ const result={home:{},builder:{},checked:{},unresolved:[],sources:{}};
+ const unique=[...new Map(items.map(r=>[r.section+':'+r.id,r])).values()];
+ let cursor=0;
+ await Promise.all(Array.from({length:Math.min(5,unique.length)},async()=>{
+  while(cursor<unique.length){
+   const r=unique[cursor++],id=Number(r.id),name=wikiItemName(r),nameKey=wikiNameKey(name),group=['buildings2','traps2'].includes(r.section)?'builder':'home';
+   result.checked[r.section+':'+r.id]=true;
+   if(!nameKey){result.unresolved.push(r.section+':'+r.id);continue}
+   const slug=name.trim().replace(/\s+/g,'_'),pages=group==='builder'?[`${slug}/Builder_Base`,slug]:[`${slug}/Home_Village`,slug];
+   let caps=null,source=null,lastError=null;
+   for(const pageName of pages){
+    try{
+     const parsed=await wikiApi({action:'parse',page:pageName,prop:'text'}),html=parsed.parse?.text?.['*'];
+     if(typeof html!=='string')continue;
+     const doc=new DOMParser().parseFromString(html,'text/html'),requirement=group==='builder'?'Builder Hall Level Required':'Town Hall Level Required';
+     try{caps=parseRequirementChart(doc,requirement,name)}catch(e){
+      caps=group==='home'?parseFixedBuildingChart(doc,name,'Town Hall Level'):parseFixedBuilderAvailability(doc,name);
+      if(!Object.keys(caps).length&&group==='builder')caps=parseFixedRequirementChart(doc,name,'Builder Hall Level Required');
+     }
+     if(Object.keys(caps).length){source=pageName;result.sources[pageName]=parsed.parse?.revid||null;break}
+    }catch(e){
+     if(e?.code==='missingtitle'){lastError=e;continue}
+     throw e;
+    }
+   }
+   if(caps&&Object.keys(caps).length)result[group][nameKey]=caps;
+   else result.unresolved.push(r.section+':'+id);
+  }
+ }));
+ return result;
+}
+async function extendWikiItemCaps(){
+ const missing=missingWikiItemRows();if(!missing.length)return true;
+ if(wikiItemPromise)return wikiItemPromise;
+ wikiItemPromise=(async()=>{
+  const extra=await fetchWikiItemCaps(missing);
+  wikiLevelData.itemCaps=wikiLevelData.itemCaps||{home:{},builder:{},checked:{},unresolved:[],sources:{}};
+  Object.assign(wikiLevelData.itemCaps.home,extra.home);
+  Object.assign(wikiLevelData.itemCaps.builder,extra.builder);
+  Object.assign(wikiLevelData.itemCaps.checked,extra.checked);
+  wikiLevelData.itemCaps.unresolved=[...new Set([...(wikiLevelData.itemCaps.unresolved||[]),...extra.unresolved])];
+  Object.assign(wikiLevelData.sources,extra.sources);
+  try{localStorage.setItem(WIKI_CACHE_KEY,JSON.stringify(wikiLevelData))}catch(e){console.warn('Der erweiterte Wiki-Levelcache konnte nicht gespeichert werden:',e)}
+  return true;
+ })().finally(()=>{wikiItemPromise=null});
+ return wikiItemPromise;
+}
+async function buildWikiLevelData(){
+ const specs=[
+  ['townHall','Town_Hall',['Resource Buildings','Army Buildings and Heroes','Defensive Buildings and Traps']],
+  ['builderHall','Builder_Hall',['Resource and Army Buildings','Defensive Buildings and Traps']],
+  ['heroHall','Hero_Hall',['Hero Hall Level Caps']],
+  ['laboratory','Laboratory/Upgrade_Chart',['Upgrade Chart']],
+  ['starLaboratory','Star_Laboratory',['Upgrade Chart']],
+  ['petHouse','Pet_House',['Max Level Chart']],
+  ['blacksmith','Blacksmith',['Statistics']],
+  ['battleMachine','Battle_Machine',['Statistics']],
+  ['battleCopter','Battle_Copter',['Statistics']],
+  ['buildersApprentice',"Builder's_Apprentice",['Statistics']],
+  ['labAssistant','Lab_Assistant',['Statistics']],
+  ['prospector','Prospector',['Statistics']],
+  ['alchemist','Alchemist',['Statistics']],
+  ['longshot','Longshot',['Statistics']],
+  ['smasher','Smasher',['Statistics']],
+  ['logger','Logger',['Statistics']]
+ ];
+ const loaded=await Promise.all(specs.map(async([key,page,sections])=>({key,page,...await wikiSections(page,sections)})));
+ const docs={},sources={};
+ loaded.forEach(result=>{docs[result.key]=result.sections;sources[result.page]=result.revision});
+ const townHall={},builderHall={};
+ const homeResources=parseHallTables([docs.townHall['Resource Buildings'].querySelectorAll('table')[1],docs.townHall['Army Buildings and Heroes'].querySelectorAll('table')[1],docs.townHall['Defensive Buildings and Traps'].querySelectorAll('table')[1]],townHall);
+ const homeTraps=parseHallTables([docs.townHall['Defensive Buildings and Traps'].querySelectorAll('table')[3]],townHall);
+ const builderResources=parseHallTables([docs.builderHall['Resource and Army Buildings'].querySelectorAll('table')[1],docs.builderHall['Defensive Buildings and Traps'].querySelectorAll('table')[1]],builderHall);
+ const builderTraps=parseHallTables([docs.builderHall['Defensive Buildings and Traps'].querySelectorAll('table')[3]],builderHall);
+ if(homeResources.found<20||homeTraps.found<5||builderResources.found<15||builderTraps.found<4)throw Error('Die Gebäude- oder Fallen-Tabellen im Wiki sind unvollständig.');
+ const heroCaps=parseHeroHallChart(docs.heroHall['Hero Hall Level Caps']);
+ const laboratory=parseUpgradeChart(docs.laboratory['Upgrade Chart'],'Labor');
+ const starLaboratory=parseUpgradeChart(docs.starLaboratory['Upgrade Chart'],'Sternlabor');
+ const pets=parsePetHouseChart(docs.petHouse['Max Level Chart']);
+ const equipment=parseBlacksmithChart(docs.blacksmith.Statistics);
+ const builderHeroes={
+  [wikiNameKey('Battle Machine')]:parseRequirementChart(docs.battleMachine.Statistics,'Builder Hall Level Required','Battle Machine'),
+  [wikiNameKey('Battle Copter')]:parseRequirementChart(docs.battleCopter.Statistics,'Builder Hall Level Required','Battle Copter')
+ };
+ const helpers={
+  [wikiNameKey("Builder's Apprentice")]:parseRequirementChart(docs.buildersApprentice.Statistics,'Town Hall Level Required',"Builder's Apprentice"),
+  [wikiNameKey('Lab Assistant')]:parseRequirementChart(docs.labAssistant.Statistics,'Town Hall Level Required','Lab Assistant'),
+  [wikiNameKey('Prospector')]:parseRequirementChart(docs.prospector.Statistics,'Town Hall Level Required','Prospector'),
+  [wikiNameKey('Alchemist')]:parseRequirementChart(docs.alchemist.Statistics,'Town Hall Level Required','Alchemist')
+ };
+ const guardians={
+  [wikiNameKey('Longshot')]:parseGuardianChart(docs.longshot.Statistics,'Longshot'),
+  [wikiNameKey('Smasher')]:parseGuardianChart(docs.smasher.Statistics,'Smasher'),
+  [wikiNameKey('Logger')]:parseGuardianChart(docs.logger.Statistics,'Logger')
+ };
+ const itemCaps=await fetchWikiItemCaps(rows.filter(r=>['buildings','traps','buildings2','traps2'].includes(r.section)));
+ Object.assign(sources,itemCaps.sources);
+ return {schema:4,source:'Clash of Clans Wiki',fetchedAt:new Date().toISOString(),sources,townHall,builderHall,heroCaps,laboratory,starLaboratory,pets,equipment,builderHeroes,helpers,guardians,itemCaps,maxTownHall:Math.max(homeResources.maxHall,homeTraps.maxHall),maxBuilderHall:Math.max(builderResources.maxHall,builderTraps.maxHall)};
+}
+function applyWikiCache(cache,stale=false,error=''){
+ wikiLevelData=cache;wikiLevelStale=stale;wikiLevelError=error;
+}
+async function loadWikiLevelData(force=false){
+ if(wikiLevelPromise&&!force)return wikiLevelPromise;
+ if(wikiLevelData&&!force&&!wikiLevelStale)return true;
+ let cached=null;
+ try{
+  const saved=JSON.parse(localStorage.getItem(WIKI_CACHE_KEY)||'null');
+  if(saved?.schema===4&&saved.source==='Clash of Clans Wiki'&&saved.townHall&&saved.laboratory&&saved.itemCaps)cached=saved;
+ }catch(e){console.warn('Der lokale Wiki-Levelcache konnte nicht gelesen werden:',e)}
+ if(cached&&!force&&Date.now()-Date.parse(cached.fetchedAt)<WIKI_CACHE_MAX_AGE){applyWikiCache(cached);return true}
+ wikiLevelError='';wikiLevelStale=false;
+ wikiLevelPromise=(async()=>{
+  try{
+   const fresh=await buildWikiLevelData();
+   try{localStorage.setItem(WIKI_CACHE_KEY,JSON.stringify(fresh))}catch(e){console.warn('Der Wiki-Levelcache konnte nicht gespeichert werden:',e)}
+   applyWikiCache(fresh);return true;
+  }catch(e){
+   wikiLevelError=e?.message||'Wiki-Maximallevel konnten nicht geladen werden.';
+   if(cached){applyWikiCache(cached,true,wikiLevelError);return true}
+   wikiLevelData=null;return false;
+  }
+ })();
+ return wikiLevelPromise;
+}
+function capAtRequirement(caps,requirement){
+ const limit=Number(requirement);if(!caps||!Number.isFinite(limit)||limit<=0)return null;
+ const eligible=Object.keys(caps).map(Number).filter(level=>Number.isFinite(level)&&level<=limit).sort((a,b)=>a-b);
+ return eligible.length?Number(caps[eligible[eligible.length-1]])||null:null;
+}
+function buildingLevel(id,section='buildings'){const row=rows.find(r=>r.section===section&&Number(r.id)===id);return row?Math.max(0,Number(row.lvl)||0):0}
 function capContext(){
- const th=getTownHallLevel()||0,bhRow=rows.find(r=>Number(r.id)===1000034&&r.village==='builder'),bh=bhRow?.lvl||0;
- return {th,bh,lab:maxBuildingAtTownHall(1000007,th)||0,heroHall:maxBuildingAtTownHall(1000071,th)||0,blacksmith:maxBuildingAtTownHall(1000070,th)||0,petHouse:maxBuildingAtTownHall(1000068,th)||0,starLab:maxBuilderBuildingAtHall(1000046,bh)||0};
+ const th=getTownHallLevel()||0,bh=buildingLevel(1000034,'buildings2');
+ return {th,bh,lab:buildingLevel(1000007),heroHall:buildingLevel(1000071),blacksmith:buildingLevel(1000070),petHouse:buildingLevel(1000068),starLab:buildingLevel(1000046,'buildings2')};
 }
 function autoMaxLevel(r,ctx=capContext()){
+ if(!wikiLevelData)return null;
  if(r.village==='home'&&!ctx.th)return null;
  if(r.village==='builder'&&!ctx.bh)return null;
- if(r.section==='heroes'){
-  // Hero caps are maintained here because the bundled community data package can lag behind live balance updates.
-  const fallback=heroCapAtTownHall(r.id,ctx.th);
-  if(fallback!==null)return fallback;
-  const item=catalogItem(r.section,r.id);
-  if(!item)return null;
-  const hall=catalogItem('buildings',1000071),maxHall=ctx.heroHall;
-  const hallLevel=hall?.levels?.filter(l=>(l.townHallRequired===undefined||Number(l.townHallRequired)<=ctx.th)&&Number(l.level)<=maxHall).sort((a,b)=>b.level-a.level)[0];
-  const cap=hallLevel?.heroLevelCaps?.[HERO_CAP_KEYS[Number(r.id)]];
-  return Number.isFinite(Number(cap))?Number(cap):maxLevelByRequirement(item,'heroHallLevelRequired',maxHall);
+ const name=wikiItemKey(r);if(!name)return null;
+ if(r.section==='buildings'&&Number(r.id)===1000001)return wikiLevelData.maxTownHall||null;
+ if(r.section==='buildings2'&&Number(r.id)===1000034)return wikiLevelData.maxBuilderHall||null;
+ if(r.section==='buildings'||r.section==='traps')return capAtRequirement(wikiLevelData.itemCaps?.home?.[name],ctx.th);
+ if(r.section==='buildings2'||r.section==='traps2')return capAtRequirement(wikiLevelData.itemCaps?.builder?.[name],ctx.bh);
+ if(r.section==='heroes')return capAtRequirement(wikiLevelData.heroCaps[name],ctx.heroHall);
+ if(r.section==='heroes2')return capAtRequirement(wikiLevelData.builderHeroes[name],ctx.bh);
+ if(r.section==='units2')return capAtRequirement(wikiLevelData.starLaboratory[name],ctx.starLab);
+ if(['units','spells','siege_machines'].includes(r.section))return capAtRequirement(wikiLevelData.laboratory[name],ctx.lab);
+ if(r.section==='pets')return capAtRequirement(wikiLevelData.pets[name],ctx.petHouse);
+ if(r.section==='equipment'){
+  const rarity=wikiNameKey(catalogItem(r.section,r.id)?.rarity);
+  const category=rarity.includes('epic')?'epic':rarity.includes('common')?'common':null;
+  return category?capAtRequirement(wikiLevelData.equipment[category],ctx.blacksmith):null;
  }
- const item=catalogItem(r.section,r.id);if(!item)return null;
- const eligible=item.levels.filter(l=>{
-  if(l.townHallRequired!==undefined&&Number(l.townHallRequired)>ctx.th&&r.village!=='builder')return false;
-  if(r.section==='units'||r.section==='spells'||r.section==='siege_machines'){
-   if(l.laboratoryRequired!==undefined&&Number(l.laboratoryRequired)>ctx.lab)return false;
-  }
-  if(r.section==='equipment'&&l.blacksmithLevelRequired!==undefined&&Number(l.blacksmithLevelRequired)>ctx.blacksmith)return false;
-  if(r.section==='pets'&&l.petHouseLevelRequired!==undefined&&Number(l.petHouseLevelRequired)>ctx.petHouse)return false;
-  if(r.village==='builder'){
-   const hallReq=l.builderHallRequired??l.builderHallLevelRequired;
-   if(hallReq!==undefined&&Number(hallReq)>ctx.bh)return false;
-   const labReq=l.starLabRequired??l.starLaboratoryRequired;
-   if(labReq!==undefined&&Number(labReq)>ctx.starLab)return false;
-  }
-  return true;
- });
- return eligible.length?Math.max(...eligible.map(l=>Number(l.level))):null;
+ if(r.section==='helpers')return capAtRequirement(wikiLevelData.helpers[name],ctx.th);
+ if(r.section==='guardians')return capAtRequirement(wikiLevelData.guardians[name],ctx.th);
+ return null;
 }
-function progressStats(){let total=0,done=0,known=0,unknown=0;const ctx=capContext();rows.forEach(r=>{if(['decos','obstacles','decos2','obstacles2','helpers'].includes(r.section))return;const max=autoMaxLevel(r,ctx);if(max>0){total+=max*r.cnt;done+=Math.min(r.lvl,max)*r.cnt;known+=r.cnt}else unknown+=r.cnt});return {total,done,known,unknown,pct:total?Math.round(done/total*100):null}}
+function capSourceText(r,ctx,max){
+ if((r.section==='buildings'&&Number(r.id)===1000001)||(r.section==='buildings2'&&Number(r.id)===1000034))return `Maximallevel laut Clash Wiki: ${max}`;
+ if(r.section==='heroes')return `Heldenhalle ${ctx.heroHall||'—'}: ${max}`;
+ if(r.section==='heroes2'||r.section==='buildings2'||r.section==='traps2')return `Bauarbeiterhalle ${ctx.bh||'—'}: ${max}`;
+ if(r.section==='units2')return `Sternlabor ${ctx.starLab||'—'}: ${max}`;
+ if(['units','spells','siege_machines'].includes(r.section))return `Labor ${ctx.lab||'—'}: ${max}`;
+ if(r.section==='pets')return `Haustierhaus ${ctx.petHouse||'—'}: ${max}`;
+ if(r.section==='equipment')return `Schmiede ${ctx.blacksmith||'—'}: ${max}`;
+ return `Rathaus ${ctx.th||'—'}: ${max}`;
+}
+function progressStats(){let total=0,done=0,known=0,unknown=0;const ctx=capContext();rows.forEach(r=>{if(['decos','obstacles','decos2','obstacles2'].includes(r.section))return;const max=autoMaxLevel(r,ctx);if(max>0){total+=max*r.cnt;done+=Math.min(r.lvl,max)*r.cnt;known+=r.cnt}else unknown+=r.cnt});return {total,done,known,unknown,pct:total?Math.round(done/total*100):null}}
 
 function getTownHallLevel(){
  // Prefer an explicit level if a future export/API includes it.
@@ -129,16 +506,32 @@ function getTownHallLevel(){
 function updateProgressOnly(){
  const ps=progressStats(),status=document.getElementById('gameDataStatus');
  document.getElementById('knownprogress').textContent=ps.known?ps.known+' Einheiten mit Maximallevel':'Maximallevel werden ermittelt';
- document.getElementById('progresssummary').innerHTML=ps.pct===null?'Noch keine auswertbaren Upgrade-Level gefunden. Prüfe den Import und die Spieldaten.':`<b>${ps.pct}%</b> gewichteter Fortschritt (${ps.done} von ${ps.total} Levelpunkten) für ${ps.known} Einheiten.`;
- if(status){status.textContent=gameCatalog.size?`Spieldaten geladen · ${gameCatalog.size} Einheiten · Datenpaket ${GAME_DATA_VERSION}${ps.unknown?` · ${ps.unknown} Einträge ohne passende Leveldaten`:''}`:gameCatalogError?`Spieldaten konnten nicht geladen werden: ${gameCatalogError} `:'Spieldaten werden geladen …';}
+ document.getElementById('progresssummary').innerHTML=ps.pct===null?'Noch keine auswertbaren Upgrade-Level gefunden. Prüfe den Import sowie die Wiki- und Katalogdaten.':`<b>${ps.pct}%</b> gewichteter Fortschritt (${ps.done} von ${ps.total} Levelpunkten) für ${ps.known} Einheiten.`;
+ if(!status)return;
+ if(gameCatalogError)status.textContent=`Spieldaten-Katalog konnte nicht geladen werden: ${gameCatalogError}`;
+ else if(!gameCatalog.size)status.textContent='Spieldaten-Katalog wird geladen …';
+ else if(wikiLevelData){
+  const snapshot=new Date(wikiLevelData.fetchedAt).toLocaleDateString('de-DE');
+  status.textContent=`Clash Wiki · Snapshot abgerufen am ${snapshot}${wikiLevelStale?` · veralteter Cache, Aktualisierung fehlgeschlagen: ${wikiLevelError}`:''}${ps.unknown?` · ${ps.unknown} Einträge ohne passende Wiki-Leveldaten`:''}`;
+ }else if(wikiLevelError)status.textContent=`Wiki-Maximallevel konnten nicht geladen werden: ${wikiLevelError}`;
+ else status.textContent='Clash-Wiki-Maximallevel werden geladen …';
 }
-function retryGameData(){gameCatalogPromise=null;gameCatalogError='';loadGameCatalog(true).then(()=>{if(data)update()});}
+function retryGameData(){gameCatalogPromise=null;gameCatalogError='';wikiLevelPromise=null;wikiLevelData=null;wikiLevelError='';wikiLevelStale=false;loadGameCatalog(true).then(ready=>ready?loadWikiLevelData(true):false).then(()=>{if(data)update()});}
 
+function ensureLevelData(){
+ if(!gameCatalog.size&&!gameCatalogError&&!gameCatalogPromise){
+  loadGameCatalog().then(ready=>ready?loadWikiLevelData():false).then(()=>{if(data)update()});
+ }else if(gameCatalog.size&&!wikiLevelData&&!wikiLevelError&&!wikiLevelPromise){
+  loadWikiLevelData().then(()=>{if(data)update()});
+ }else if(gameCatalog.size&&wikiLevelData&&missingWikiItemRows().length&&!wikiItemPromise){
+  extendWikiItemCaps().then(()=>{if(data)update()});
+ }
+}
 function update(){if(!data)return;document.getElementById('playerline').textContent='Letzter Import: '+new Date(Number(data.timestamp)*1000).toLocaleString('de-DE');document.getElementById('sbuild').textContent=countSections(['buildings','traps','buildings2','traps2']);document.getElementById('sheroes').textContent=countSections(['heroes','heroes2']);document.getElementById('stroops').textContent=countSections(['units','units2','spells','siege_machines']);document.getElementById('stimers').textContent=timers().length;
 let cats=[['buildings','Gebäude'],['traps','Fallen'],['heroes','Helden'],['units','Truppen'],['units2','Bauarbeiterbasis-Truppen'],['spells','Zauber'],['siege_machines','Belagerungsmaschinen'],['pets','Begleiter'],['equipment','Ausrüstung'],['helpers','Helfer'],['guardians','Wächter']];document.getElementById('bars').innerHTML=cats.map(([k,n])=>`<div class="rowitem split"><div><b>${n}</b><div class="mini">${count(k)} Einheiten</div></div><span>${count(k)}</span></div>`).join('');
 let home=countSections(['buildings','traps','units','siege_machines','heroes','spells','pets','equipment']),builder=countSections(['buildings2','traps2','units2','heroes2']);document.getElementById('villagebars').innerHTML=`<div class="rowitem"><div class="split"><b>Heimatdorf</b><b>${home}</b></div><div class="mini">Gebäude, Fallen, Truppen, Helden, Zauber & Ausrüstung</div></div><div class="rowitem"><div class="split"><b>Bauarbeiterbasis</b><b>${builder}</b></div><div class="mini">Gebäude, Fallen, Truppen & Helden</div></div>`;
 let t=timers();document.getElementById('timers').innerHTML=t.length?t.slice(0,5).map(timerHtml).join(''):'<div class="empty">Keine Timer erkannt.</div>';document.getElementById('alltimers').innerHTML=t.length?t.map(timerHtml).join(''):'<div class="empty">Keine laufenden Timer vorhanden.</div>';document.getElementById('timerwarning').textContent='Timer-Rohwerte werden unverändert angezeigt. Einheit/Umrechnung ist ohne bestätigte Export-Spezifikation nicht aktiviert.';
-let ps=progressStats();updateProgressOnly();document.getElementById('profiletag').textContent='Dein Dorf';let town=getTownHallLevel();document.getElementById('profiletitle').textContent=town?'Town Hall '+town:'Town Hall nicht erkannt';document.getElementById('profiletown').textContent=town?'Rathaus-Level '+town:'Rathaus-Level im Export nicht gefunden';let townImage=document.getElementById('profiletownimage');if(town){townImage.innerHTML=`<img class="townhall-art" src="https://assets.clashk.ing/buildings/home-village/town_hall/level_${town}.webp" alt="Rathaus Level ${town}" loading="lazy" onerror="this.replaceWith(document.createTextNode('🏰'))">`}else{townImage.textContent='🏰'}let pb=[['Structures',countSections(['buildings','traps'])],['Lab',countSections(['units','spells','siege_machines'])],['Heroes',countSections(['heroes'])],['Equipment',count('equipment')],['Pets',count('pets')]];document.getElementById('profilebars').innerHTML=pb.map(([n,v])=>`<div class="profilebar"><div class="progress"><i style="width:${ps.pct||0}%"></i></div><small>${n} · ${v}</small></div>`).join('');renderList();renderBuilders();renderPlans();if(!gameCatalog.size&&!gameCatalogError)loadGameCatalog().then(()=>{if(data)update()})}
+let ps=progressStats();updateProgressOnly();document.getElementById('profiletag').textContent='Dein Dorf';let town=getTownHallLevel();document.getElementById('profiletitle').textContent=town?'Town Hall '+town:'Town Hall nicht erkannt';document.getElementById('profiletown').textContent=town?'Rathaus-Level '+town:'Rathaus-Level im Export nicht gefunden';let townImage=document.getElementById('profiletownimage');if(town){townImage.innerHTML=`<img class="townhall-art" src="https://assets.clashk.ing/buildings/home-village/town_hall/level_${town}.webp" alt="Rathaus Level ${town}" loading="lazy" onerror="this.replaceWith(document.createTextNode('🏰'))">`}else{townImage.textContent='🏰'}let pb=[['Structures',countSections(['buildings','traps'])],['Lab',countSections(['units','spells','siege_machines'])],['Heroes',countSections(['heroes'])],['Equipment',count('equipment')],['Pets',count('pets')]];document.getElementById('profilebars').innerHTML=pb.map(([n,v])=>`<div class="profilebar"><div class="progress"><i style="width:${ps.pct||0}%"></i></div><small>${n} · ${v}</small></div>`).join('');renderList();renderBuilders();renderPlans();ensureLevelData()}
 function timerHtml(r){let b=meta.builders[key(r)]||'Nicht zugeordnet';return `<div class="timer"><div class="split"><strong>${esc(r.name||r.label)}</strong><span class="pill">${esc(village(r.section)==='builder'?'Bauarbeiterbasis':'Heimatdorf')}</span></div><small>${esc(keys[r.section])} · Level ${r.lvl}</small><div class="mini">Timer-Rohwert: <b>${Number(r.timer).toLocaleString('de-DE')}</b> · Bauarbeiter-Zuordnung: ${esc(b)}</div></div>`}
 function show(p){page=p;document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.page===p));['dashboard','listpage','upgrades','planner','import'].forEach(id=>document.getElementById(id).classList.add('hide'));if(['buildings','heroes','troops'].includes(p)){document.getElementById('listpage').classList.remove('hide');document.getElementById('listtitle').textContent=p==='buildings'?'Gebäude & Verteidigung':p==='heroes'?'Helden':'Truppen, Zauber & Begleiter';setupCategories();renderList()}else document.getElementById(p).classList.remove('hide')}
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>show(b.dataset.page));
@@ -169,18 +562,28 @@ function renderList(){
  const icons={buildings:'🏰',traps:'💣',heroes:'🦸',units:'⚔️',spells:'✨',siege_machines:'🚜',pets:'🐾',equipment:'🛡️',buildings2:'🏗️',traps2:'💣',units2:'⚔️',heroes2:'🦸'};
  document.getElementById('items').innerHTML=Object.entries(groups).map(([section,list])=>{
    let total=list.reduce((n,r)=>n+r.cnt,0);
-   const byName={};
-   list.forEach(r=>{const title=r.name||'Unbekanntes Element';(byName[title]??=[]).push(r)});
+   const itemGroups=new Map(),defenseNumbers={};
+   list.forEach(r=>{
+    const title=r.name||'Unbekanntes Element';
+    if(defenseKeys.has(r.section+':'+Number(r.id))){
+     const nameKey=r.section+':'+title,number=defenseNumbers[nameKey]=(defenseNumbers[nameKey]||0)+1;
+     itemGroups.set('defense:'+r.section+':'+r.index,{title:`${title} #${number}`,items:[r]});
+    }else{
+     const groupKey='item:'+title;
+     if(!itemGroups.has(groupKey))itemGroups.set(groupKey,{title,items:[]});
+     itemGroups.get(groupKey).items.push(r);
+    }
+   });
    return `<section class="ninja-section"><div class="ninja-heading">${esc(keys[section])}</div><div class="ninja-summary">${total} Einheiten · <b>${list.length}</b> Einträge · Levelübersicht</div>`+
-   Object.entries(byName).map(([title,items])=>`<div class="ninja-item-group"><div class="ninja-item-heading">${esc(title)} <small>${items.reduce((n,r)=>n+r.cnt,0)}×</small></div>`+
-     items.map(r=>{let m=meta.items[key(r)]||{},max=autoMaxLevel(r,ctx),done=max>0&&r.lvl>=max,icon=entityImage(r),capText=max?(r.village==='builder'?`Maximallevel Bauarbeiterhalle ${ctx.bh||'—'}: ${max}`:`Maximallevel Rathaus ${ctx.th||'—'}: ${max}`):'Keine passenden Spieldaten';
-       return `<article class="ninja-row"><div class="ninja-left"><div class="ninja-icon">${icon}</div><div class="ninja-level">${r.lvl}${max?'/'+max:''} <small>×${r.cnt}</small></div><button class="ninja-up" title="Upgrade vormerken" onclick="quickPlan('${r.section}',${r.index})">⬆</button></div><div class="ninja-right">${done?`<div class="ninja-full">Fully upgraded</div>`:`<div class="lvl">Lvl ${r.lvl}:</div><div class="cost">${max?'Max. '+max:'Keine Spieldaten'}</div><div class="duration">—</div>`}</div></article>`+
-       `<div class="ninja-edit"><label>Level <input type="number" min="0" value="${r.lvl}" onchange="changeLevel('${r.section}',${r.index},this.value)"></label><span class="cap-note">${esc(capText)}</span><input aria-label="Notiz" placeholder="Notiz" value="${esc(m.note||'')}" onchange="changeNote('${r.section}',${r.index},this.value)"></div>`;
-     }).join('')+'</div>').join('')+'</section>';
+   [...itemGroups.values()].map(({title,items})=>{const groupCount=items.reduce((n,r)=>n+r.cnt,0),countLabel=items.length>1||groupCount>1?` <small>${groupCount}×</small>`:'';return `<div class="ninja-item-group"><div class="ninja-item-heading">${esc(title)}${countLabel}</div>`+
+     items.map(r=>{let m=meta.items[key(r)]||{},max=autoMaxLevel(r,ctx),done=max>0&&r.lvl>=max,icon=entityImage(r),progress=max?Math.min(100,Math.max(0,Math.round(r.lvl/max*100))):0,remaining=max?Math.max(0,max-r.lvl):null,capText=max?capSourceText(r,ctx,max):'Keine passenden Wiki-Leveldaten';
+       return `<article class="ninja-row"><div class="ninja-left"><div class="ninja-icon">${icon}</div><div class="ninja-level">Lvl ${r.lvl}${r.cnt>1?` <small>×${r.cnt}</small>`:''}</div><button class="ninja-up" title="Upgrade vormerken" aria-label="Upgrade für ${esc(r.name||keys[section])} vormerken" onclick="quickPlan('${r.section}',${r.index})">⬆</button></div><div class="ninja-right"><div class="level-overview"><strong>${max?`Level ${r.lvl} von ${max}`:`Level ${r.lvl}`}</strong><span>${done?'Maximallevel erreicht':max?`${remaining} Level bis zum Maximum`:'Maximallevel nicht verfügbar'}</span></div>${max?`<div class="level-progress" role="progressbar" aria-label="Fortschritt ${esc(r.name||keys[section])}" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div>`:''}</div></article>`+
+       `<div class="ninja-edit"><label>Level <input type="number" min="0" ${max?`max="${max}"`:''} step="1" value="${r.lvl}" onchange="changeLevel('${r.section}',${r.index},this.value,${max||'null'})"></label><span class="cap-note">${esc(capText)}</span><input aria-label="Notiz" placeholder="Notiz" value="${esc(m.note||'')}" onchange="changeNote('${r.section}',${r.index},this.value)"></div>`;
+     }).join('')+'</div>'}).join('')+'</section>';
  }).join('')||'<div class="ninja-empty">Keine Einträge gefunden. Importiere zuerst deinen Dorfexport.</div>';
 }
 function quickPlan(k,i){let r=rows.find(x=>x.section===k&&x.index===i);if(!r)return;meta.plans.push({id:Date.now(),done:false,name:r.name||keys[k],level:r.lvl,target:'',builder:'',start:'',note:'Aus Gebäudeübersicht vorgemerkt'});saveMeta();renderPlans();alert('Upgrade wurde im Planer vorgemerkt.')}
-function changeLevel(k,i,v){if(!data[k]?.[i])return;data[k][i].lvl=Math.max(0,Number(v)||0);localStorage.setItem(DATA,JSON.stringify(data));buildRows();update()}function changeNote(k,i,v){let z=meta.items[k+':'+i]||{};z.note=v;meta.items[k+':'+i]=z;saveMeta()}
+function changeLevel(k,i,v,max){if(!data[k]?.[i])return;const level=Number(v),cap=Number(max);if(!Number.isInteger(level)||level<0||(Number.isFinite(cap)&&cap>0&&level>cap)){alert(Number.isFinite(cap)&&cap>0?`Level muss zwischen 0 und ${cap} liegen.`:'Bitte ein gültiges Level ab 0 eingeben.');update();return}data[k][i].lvl=level;localStorage.setItem(DATA,JSON.stringify(data));buildRows();update()}function changeNote(k,i,v){let z=meta.items[k+':'+i]||{};z.note=v;meta.items[k+':'+i]=z;saveMeta()}
 
 function autoAssignBuilders(){let n={home:0,builder:0};timers().forEach(r=>{let k=key(r);if(meta.builders[k])return;let v=r.village==='builder'?'builder':'home';n[v]++;meta.builders[k]=v==='builder'?'Vorschlag Bauarbeiterbasis '+n[v]:'Vorschlag Bauarbeiter '+n[v]});saveMeta();renderBuilders()}function renderBuilders(){let t=timers();document.getElementById('builderassign').innerHTML=t.length?'<div class="actions" style="margin-bottom:12px"><button class="btn gold" onclick="autoAssignBuilders()">Automatisch zuordnen (Vorschläge)</button></div>'+t.map(r=>`<div class="rowitem split"><div><b>${esc(r.name||keys[r.section])}</b><br><small>${esc(village(r.section)==='builder'?'Bauarbeiterbasis':'Heimatdorf')} · Level ${r.lvl} · Timer-Rohwert ${Number(r.timer).toLocaleString('de-DE')}</small></div><input class="field" style="max-width:220px" placeholder="Bauarbeiter-Zuordnung" value="${esc(meta.builders[key(r)]||'')}" onchange="setBuilder('${r.section}',${r.index},this.value)"></div>`).join(''):'<div class="empty">Keine Timer zum Zuordnen vorhanden.</div>'}function setBuilder(k,i,v){let r=rows.find(x=>x.section===k&&x.index===i);if(!r)return;meta.builders[key(r)]=v;saveMeta()}
 function addPlan(){let name=document.getElementById('planname').value.trim();if(!name)return alert('Bitte einen Namen für das Upgrade eingeben.');let current=Number(document.getElementById('planlevel').value),target=Number(document.getElementById('plantarget').value);if(document.getElementById('plantarget').value&&document.getElementById('planlevel').value&&target<=current)return alert('Das Ziel-Level muss höher als das aktuelle Level sein.');meta.plans.push({id:Date.now(),done:false,name,level:document.getElementById('planlevel').value,target:document.getElementById('plantarget').value,builder:document.getElementById('planbuilder').value,start:document.getElementById('planstart').value,note:document.getElementById('plannote').value});saveMeta();renderPlans();['planname','planlevel','plantarget','planbuilder','planstart','plannote'].forEach(id=>document.getElementById(id).value='')}
