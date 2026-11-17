@@ -18,7 +18,7 @@ const names={
  equipment:{90000000:'Barbarenpuppe',90000001:'Wutphiole',90000002:'Bogenschützenpuppe',90000003:'Unsichtbarkeitsphiole',90000004:'Ewiger Foliant',90000005:'Wutjuwel',90000006:'Suchender Schild',90000007:'Königsjuwel',90000008:'Erdbebenstiefel',90000009:'Lebensjuwel',90000010:'Riesenhandschuh',90000011:'Vampstache',90000012:'Heilerpuppe',90000013:'Riesenpfeil',90000014:'Gefrorener Pfeil',90000015:'Heilender Foliant',90000016:'Drachenflamme',90000017:'Spitze Kugel',90000019:'Spiky Ball',90000020:'Schlangenarmband',90000022:'Magic Mirror',90000024:'Haste Vial',90000032:'Fireball',90000034:'Rocket Spear',90000035:'Action Figure',90000039:'Stick Horse',90000040:'Dark Orb',90000041:'Metal Pants',90000042:'Noble Iron',90000043:'Henchmen Puppet',90000044:'Electro Boots',90000047:'Lavaloons',90000048:'Action Figure',90000049:'Snake Bracelet',90000050:'Heroic Torch',90000051:'Flame Bracelet',90000052:'Frost Flake',90000053:'Guardian Puppet',90000056:'Meteor Staff',90000057:'Totem',90000059:'Spirit Walk',90000060:'Frost Blast',90000061:'Giant Arrow'}
 };
 
-let data=null,rows=[],page='dashboard',detailReturnPage='dashboard',meta={items:{},builders:{},plans:[]};const META='clash-progress-meta-v3',DATA='clash-progress-preview';
+let data=null,rows=[],page='dashboard',detailReturnPage='dashboard',detailLevels=[],detailCurrentLevel=0,detailPageIndex=0,detailPageSize=10,meta={items:{},builders:{},plans:[]};const META='clash-progress-meta-v3',DATA='clash-progress-preview';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function parse(raw){let x=JSON.parse(String(raw).replace(/^\uFEFF/,''));if(!x||typeof x!=='object'||Array.isArray(x)||typeof x.tag!=='string'||!Array.isArray(x.buildings))throw Error('Kein gültiger Clash-of-Clans-Export: Spieler-Tag oder Gebäude-Liste fehlt.');for(const [k,v] of Object.entries(x)){if(Array.isArray(v)&&keys[k]&&!v.every(o=>o&&typeof o==='object'&&!Array.isArray(o)))throw Error('Ungültige Einträge im Bereich '+keys[k]+'.')}return x}
 function load(){try{meta=JSON.parse(localStorage.getItem(META)||localStorage.getItem('clash-progress-meta-v2')||'{"items":{},"builders":{},"plans":[]}');meta={items:meta.items||{},builders:meta.builders||{},plans:Array.isArray(meta.plans)?meta.plans:[]};saveMeta()}catch(e){meta={items:{},builders:{},plans:[]}}try{let s=localStorage.getItem(DATA);if(s){data=parse(s);buildRows();update()}}catch(e){console.warn('Gespeicherter Spielstand konnte nicht geladen werden:',e);}}
@@ -48,7 +48,7 @@ function buildRows(){splitDefenseStacks();rows=[];Object.entries(keys).forEach((
 }
 function importRaw(raw){try{let incoming=JSON.parse(String(raw).replace(/^\uFEFF/,''));let nextData, nextMeta=meta;if(incoming&&incoming.export&&incoming.tracker){nextData=parse(JSON.stringify(incoming.export));nextMeta={items:incoming.tracker.items||meta.items||{},builders:incoming.tracker.builders||meta.builders||{},plans:Array.isArray(incoming.tracker.plans)?incoming.tracker.plans:meta.plans||[]}}else nextData=parse(raw);if(data&&!confirm('Vorhandenen Spielstand durch den Import ersetzen? Exportiere vorher ein Backup, wenn du den alten Stand behalten möchtest.'))return;localStorage.setItem(DATA,JSON.stringify(nextData));data=nextData;meta=nextMeta;saveMeta();buildRows();update();document.getElementById('importmsg').textContent='Import erfolgreich: '+rows.length+' Datensätze erkannt. Deine Daten bleiben lokal auf diesem Gerät.';show('dashboard')}catch(e){document.getElementById('importmsg').textContent='Import fehlgeschlagen: '+e.message}}
 document.getElementById('file').addEventListener('change',async e=>{let f=e.target.files[0];if(f){try{if(f.size>10*1024*1024)throw Error('Datei ist größer als 10 MB.');importRaw(await f.text())}catch(err){document.getElementById('importmsg').textContent='Datei konnte nicht gelesen werden: '+err.message}e.target.value=''}});function importPaste(){importRaw(document.getElementById('paste').value)}
-function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.5',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.6',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 function clearData(){if(confirm('Spielstand und Tracker-Metadaten auf diesem Gerät wirklich löschen?')){localStorage.removeItem(DATA);localStorage.removeItem(META);data=null;rows=[];meta={items:{},builders:{},plans:[]};update();show('dashboard')}}
 function count(k){return rows.filter(r=>r.section===k).reduce((n,r)=>n+r.cnt,0)}function timers(){return rows.filter(r=>r.timer>0)}
 function countSections(list){return rows.filter(r=>list.includes(r.section)).reduce((n,r)=>n+r.cnt,0)}
@@ -619,19 +619,60 @@ function openItemDetail(section,index){
  levels=Array.isArray(levels)?levels:[];
  const ctx=capContext(),max=autoMaxLevel(r,ctx);
  const title=r.name||keys[section]||'Element';
- const rowsHtml=levels.length?levels.map((level,i)=>{
-  const levelNumber=detailLevelNumber(level,i);
-  const current=levelNumber===r.lvl;
-  const completed=levelNumber<=r.lvl;
-  return `<tr class="${current?'current':completed?'completed':''}"><td><b>Level ${levelNumber}</b></td><td>${esc(detailCost(level))}</td><td>${esc(detailTime(level))}</td><td>${esc(detailRequirement(level))}</td></tr>`;
- }).join(''):`<tr><td colspan="4" class="empty-detail">Für dieses Element liegen keine Leveldaten im Katalog vor.</td></tr>`;
  document.getElementById('detailtitle').textContent=title;
  document.getElementById('detailmeta').textContent=`${keys[section]} · Aktuelles Level: ${r.lvl}${max?` · Maximum: ${max}`:''}`;
  document.getElementById('detaillegend').innerHTML='<span><b class="currentMark"></b>Aktuelles Level</span><span><b class="doneMark"></b>Bereits erreicht</span>';
- document.getElementById('detaillevels').innerHTML=rowsHtml;
  detailReturnPage=page==='detail'?detailReturnPage:page;
+ detailLevels=levels;
+ detailCurrentLevel=r.lvl;
+ detailPageSize=10;
+ document.getElementById('detailsize').value='10';
+ jumpToCurrentDetailLevel();
  show('detail');
  document.getElementById('detailpage').scrollIntoView({block:'start'});
+}
+function detailLevelIndex(level,index){return detailLevelNumber(level,index)}
+function renderDetailLevels(){
+ const total=detailLevels.length;
+ if(!total){
+  document.getElementById('detaillevels').innerHTML='<tr><td colspan="4" class="empty-detail">Für dieses Element liegen keine Leveldaten im Katalog vor.</td></tr>';
+  document.getElementById('detailpageinfo').textContent='Keine Leveldaten';
+  document.getElementById('detailprev').disabled=true;
+  document.getElementById('detailnext').disabled=true;
+  return;
+ }
+ const size=detailPageSize==='all'?total:Number(detailPageSize);
+ const pages=Math.ceil(total/size);
+ detailPageIndex=Math.max(0,Math.min(detailPageIndex,pages-1));
+ const start=detailPageIndex*size,end=Math.min(start+size,total);
+ const visible=detailLevels.slice(start,end).map((level,i)=>{
+  const levelNumber=detailLevelIndex(level,start+i);
+  const current=levelNumber===detailCurrentLevel;
+  const completed=levelNumber<=detailCurrentLevel;
+  return `<tr class="${current?'current':completed?'completed':''}"><td><b>Level ${levelNumber}</b></td><td>${esc(detailCost(level))}</td><td>${esc(detailTime(level))}</td><td>${esc(detailRequirement(level))}</td></tr>`;
+ }).join('');
+ document.getElementById('detaillevels').innerHTML=visible;
+ document.getElementById('detailpageinfo').textContent=detailPageSize==='all'?`Alle ${total} Level`:`${start+1}–${end} von ${total}`;
+ document.getElementById('detailprev').disabled=detailPageIndex===0;
+ document.getElementById('detailnext').disabled=detailPageIndex>=pages-1;
+}
+function changeDetailPage(offset){
+ detailPageIndex+=offset;
+ renderDetailLevels();
+ document.getElementById('detailpage').scrollIntoView({block:'start'});
+}
+function setDetailPageSize(value){
+ detailPageSize=value;
+ detailPageIndex=0;
+ renderDetailLevels();
+}
+function jumpToCurrentDetailLevel(){
+ if(!detailLevels.length)return;
+ const index=detailLevels.findIndex((level,i)=>detailLevelIndex(level,i)===detailCurrentLevel);
+ if(index<0){renderDetailLevels();return}
+ if(detailPageSize==='all'){detailPageIndex=0}else detailPageIndex=Math.floor(index/Number(detailPageSize));
+ renderDetailLevels();
+ requestAnimationFrame(()=>document.querySelector('#detaillevels tr.current')?.scrollIntoView({block:'center'}));
 }
 function closeItemDetail(){show(detailReturnPage)}
 function renderList(){

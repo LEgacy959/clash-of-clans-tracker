@@ -1,4 +1,4 @@
-CLASH NINJA STYLE – VERSION 1.8.5
+CLASH NINJA STYLE – VERSION 1.8.6
 
 Änderungen in 1.8.3
 - Mehrfach vorhandene Verteidigungsgebäude und Fallen werden einzeln und separat bearbeitbar angezeigt
