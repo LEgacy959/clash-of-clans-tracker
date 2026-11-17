@@ -21,7 +21,7 @@ const names={
 let data=null,rows=[],page='dashboard',detailReturnPage='dashboard',detailLevels=[],detailCurrentLevel=0,detailPageIndex=0,detailPageSize=10,meta={items:{},builders:{},plans:[]};const META='clash-progress-meta-v3',DATA='clash-progress-preview';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function parse(raw){let x=JSON.parse(String(raw).replace(/^\uFEFF/,''));if(!x||typeof x!=='object'||Array.isArray(x)||typeof x.tag!=='string'||!Array.isArray(x.buildings))throw Error('Kein gültiger Clash-of-Clans-Export: Spieler-Tag oder Gebäude-Liste fehlt.');for(const [k,v] of Object.entries(x)){if(Array.isArray(v)&&keys[k]&&!v.every(o=>o&&typeof o==='object'&&!Array.isArray(o)))throw Error('Ungültige Einträge im Bereich '+keys[k]+'.')}return x}
-function load(){try{meta=JSON.parse(localStorage.getItem(META)||localStorage.getItem('clash-progress-meta-v2')||'{"items":{},"builders":{},"plans":[]}');meta={items:meta.items||{},builders:meta.builders||{},plans:Array.isArray(meta.plans)?meta.plans:[]};saveMeta()}catch(e){meta={items:{},builders:{},plans:[]}}try{let s=localStorage.getItem(DATA);if(s){data=parse(s);buildRows();update()}}catch(e){console.warn('Gespeicherter Spielstand konnte nicht geladen werden:',e);}}
+function load(){try{meta=JSON.parse(localStorage.getItem(META)||localStorage.getItem('clash-progress-meta-v2')||'{"items":{},"builders":{},"plans":[]}');meta={items:meta.items||{},builders:meta.builders||{},plans:Array.isArray(meta.plans)?meta.plans:[]};saveMeta()}catch(e){meta={items:{},builders:{},plans:[]}}try{let s=localStorage.getItem(DATA);if(s){data=parse(s);buildRows();update()}}catch(e){console.warn('Gespeicherter Spielstand konnte nicht geladen werden:',e);}}renderPlans();
 function saveMeta(){try{localStorage.setItem(META,JSON.stringify(meta))}catch(e){alert('Speichern fehlgeschlagen. Bitte exportiere ein Backup und prüfe den Speicherplatz im Browser.');throw e}}function key(r){return r.section+':'+r.index}
 function itemName(section,id){return names[section]?.[id]||null}
 function village(section){return ['buildings2','traps2','decos2','obstacles2','units2','heroes2'].includes(section)?'builder':'home'}
@@ -48,7 +48,7 @@ function buildRows(){splitDefenseStacks();rows=[];Object.entries(keys).forEach((
 }
 function importRaw(raw){try{let incoming=JSON.parse(String(raw).replace(/^\uFEFF/,''));let nextData, nextMeta=meta;if(incoming&&incoming.export&&incoming.tracker){nextData=parse(JSON.stringify(incoming.export));nextMeta={items:incoming.tracker.items||meta.items||{},builders:incoming.tracker.builders||meta.builders||{},plans:Array.isArray(incoming.tracker.plans)?incoming.tracker.plans:meta.plans||[]}}else nextData=parse(raw);if(data&&!confirm('Vorhandenen Spielstand durch den Import ersetzen? Exportiere vorher ein Backup, wenn du den alten Stand behalten möchtest.'))return;localStorage.setItem(DATA,JSON.stringify(nextData));data=nextData;meta=nextMeta;saveMeta();buildRows();update();document.getElementById('importmsg').textContent='Import erfolgreich: '+rows.length+' Datensätze erkannt. Deine Daten bleiben lokal auf diesem Gerät.';show('dashboard')}catch(e){document.getElementById('importmsg').textContent='Import fehlgeschlagen: '+e.message}}
 document.getElementById('file').addEventListener('change',async e=>{let f=e.target.files[0];if(f){try{if(f.size>10*1024*1024)throw Error('Datei ist größer als 10 MB.');importRaw(await f.text())}catch(err){document.getElementById('importmsg').textContent='Datei konnte nicht gelesen werden: '+err.message}e.target.value=''}});function importPaste(){importRaw(document.getElementById('paste').value)}
-function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.6',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.11',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 function clearData(){if(confirm('Spielstand und Tracker-Metadaten auf diesem Gerät wirklich löschen?')){localStorage.removeItem(DATA);localStorage.removeItem(META);data=null;rows=[];meta={items:{},builders:{},plans:[]};update();show('dashboard')}}
 function count(k){return rows.filter(r=>r.section===k).reduce((n,r)=>n+r.cnt,0)}function timers(){return rows.filter(r=>r.timer>0)}
 function countSections(list){return rows.filter(r=>list.includes(r.section)).reduce((n,r)=>n+r.cnt,0)}
@@ -565,31 +565,69 @@ function detailFirstValue(object,keys){
  }
  return null;
 }
-function detailCost(level){
- const direct=detailFirstValue(level,['cost','upgradeCost','buildCost','researchCost','trainingCost','elixirCost','goldCost','darkElixirCost','gemCost']);
+function detailResourceKey(resource){
+ const normalized=String(resource||'').toLowerCase().replace(/[^a-z]/g,'');
+ if(normalized.includes('buildergold'))return 'builder_gold';
+ if(normalized.includes('builderelixir'))return 'builder_elixir';
+ if(normalized.includes('darkelixir'))return 'dark_elixir';
+ if(normalized.includes('elixir'))return 'elixir';
+ if(normalized.includes('gold'))return 'gold';
+ return null;
+}
+function detailCostItem(value,resource){
+ if(value===null||value===''||!Number.isFinite(Number(value)))return '';
+ const label=String(resource||'').trim(),icon=detailResourceKey(label);
+ const displayLabel=icon?({gold:'Gold',elixir:'Elixier',dark_elixir:'Dunkles Elixier',builder_gold:'Bauarbeiter-Gold',builder_elixir:'Bauarbeiter-Elixier'}[icon]):label;
+ const image=icon?`<img class="detail-resource-icon" src="https://assets.clashk.ing/resources/${icon}.webp" alt="${esc(displayLabel)}" title="${esc(displayLabel)}" loading="lazy">`:'';
+ return `<span class="detail-cost-item"><b>${Number(value).toLocaleString('de-DE')}</b>${image}${!image&&label?`<small>${esc(label)}</small>`:''}</span>`;
+}
+function detailCostValues(level){
+ const costKeys=['cost','upgradeCost','buildCost','researchCost','trainingCost','elixirCost','goldCost','darkElixirCost','gemCost'];
+ const directKey=costKeys.find(key=>level?.[key]!==undefined&&level[key]!==null&&level[key]!=='');
+ const direct=directKey?level[directKey]:null;
  if(direct!==null&&typeof direct==='object'){
-  const parts=Object.entries(direct).filter(([,value])=>Number.isFinite(Number(value))).map(([resource,value])=>`${Number(value).toLocaleString('de-DE')} ${resource}`);
-  return parts.join(' · ')||'–';
+  return Object.entries(direct).filter(([,value])=>value!==null&&value!==''&&Number.isFinite(Number(value))).map(([resource,value])=>({amount:Number(value),resource}));
  }
- if(direct!==null)return `${Number(direct).toLocaleString('de-DE')} ${detailFirstValue(level,['costResource','buildCostResource','researchCostResource','trainingCostResource','resource','resourceType'])||''}`.trim();
+ if(direct!==null){
+  const resource=detailFirstValue(level,['costResource','buildCostResource','researchCostResource','trainingCostResource','resource','resourceType'])||directKey.replace(/(?:upgrade|build|research|training)?cost/i,'');
+  return Number.isFinite(Number(direct))?[{amount:Number(direct),resource}]:[];
+ }
  const costParts=[];
  for(const [key,value] of Object.entries(level)){
-  if(/cost/i.test(key)&&Number.isFinite(Number(value)))costParts.push(`${Number(value).toLocaleString('de-DE')} ${key.replace(/cost|Upgrade|Build|Research|Training/gi,'').trim()||''}`.trim());
+  if(/cost/i.test(key)&&value!==null&&value!==''&&Number.isFinite(Number(value)))costParts.push({amount:Number(value),resource:key.replace(/cost|Upgrade|Build|Research|Training/gi,'').trim()});
  }
- return costParts.join(' · ')||'–';
+ return costParts;
+}
+function detailCost(level){
+ return detailCostValues(level).map(cost=>detailCostItem(cost.amount,cost.resource)).join('')||'–';
+}
+function detailDurationSeconds(level){
+ const value=detailFirstValue(level,['buildTime','upgradeTime','researchTime','trainingTime','duration','time']);
+ if(typeof value==='number')return Number.isFinite(value)&&value>=0?value:null;
+ if(!value||typeof value!=='object')return null;
+ const parts=['days','hours','minutes','seconds'].map(key=>Number(value[key]||0));
+ return parts.every(part=>Number.isFinite(part)&&part>=0)?parts[0]*86400+parts[1]*3600+parts[2]*60+parts[3]:null;
+}
+function catalogLevelsForItem(item){
+ let levels=item?.levels;
+ if(!Array.isArray(levels)&&item?.upgradeLevels&&Array.isArray(item.upgradeLevels))levels=item.upgradeLevels;
+ if(!Array.isArray(levels)&&item?.levels&&typeof item.levels==='object')levels=Object.values(item.levels);
+ return Array.isArray(levels)?levels:[];
+}
+function formatDetailTime(totalSeconds){
+ let remaining=Math.max(0,Math.floor(totalSeconds));
+ const days=Math.floor(remaining/86400);remaining%=86400;
+ const hours=Math.floor(remaining/3600);remaining%=3600;
+ const minutes=Math.floor(remaining/60),seconds=remaining%60;
+ return `${days?`${days} T `:''}${hours} Std. ${minutes} Min.${seconds?` ${seconds} Sek.`:''}`;
 }
 function detailTime(level){
  const value=detailFirstValue(level,['buildTime','upgradeTime','researchTime','trainingTime','duration','time']);
  if(value===null||value==='')return '–';
- if(typeof value==='number'){
-  let seconds=value;
-  if(seconds<1000&&Number.isInteger(seconds))seconds*=1;
-  const days=Math.floor(seconds/86400),hours=Math.floor(seconds%86400/3600),minutes=Math.floor(seconds%3600/60);
-  return [days?`${days} T`:'',hours?`${hours} Std.`:'',minutes?`${minutes} Min.`:''].filter(Boolean).join(' ')||'< 1 Min.';
- }
+ if(typeof value==='number')return formatDetailTime(value);
  if(typeof value==='object'){
   const days=Number(value.days||0),hours=Number(value.hours||0),minutes=Number(value.minutes||0),seconds=Number(value.seconds||0);
-  return [days?`${days} T`:'',hours?`${hours} Std.`:'',minutes?`${minutes} Min.`:'',seconds?`${seconds} Sek.`:''].filter(Boolean).join(' ')||'0 Sek.';
+  return formatDetailTime(days*86400+hours*3600+minutes*60+seconds);
  }
  return String(value);
 }
@@ -613,10 +651,7 @@ function openItemDetail(section,index){
  const r=rows.find(item=>item.section===section&&item.index===index);
  if(!r)return;
  const item=catalogItem(section,r.id);
- let levels=item?.levels;
- if(!Array.isArray(levels)&&item?.upgradeLevels&&Array.isArray(item.upgradeLevels))levels=item.upgradeLevels;
- if(!Array.isArray(levels)&&item?.levels&&typeof item.levels==='object')levels=Object.values(item.levels);
- levels=Array.isArray(levels)?levels:[];
+ const levels=catalogLevelsForItem(item);
  const ctx=capContext(),max=autoMaxLevel(r,ctx);
  const title=r.name||keys[section]||'Element';
  document.getElementById('detailtitle').textContent=title;
@@ -649,7 +684,7 @@ function renderDetailLevels(){
   const levelNumber=detailLevelIndex(level,start+i);
   const current=levelNumber===detailCurrentLevel;
   const completed=levelNumber<=detailCurrentLevel;
-  return `<tr class="${current?'current':completed?'completed':''}"><td><b>Level ${levelNumber}</b></td><td>${esc(detailCost(level))}</td><td>${esc(detailTime(level))}</td><td>${esc(detailRequirement(level))}</td></tr>`;
+  return `<tr class="${current?'current':completed?'completed':''}"><td><b>Level ${levelNumber}</b></td><td class="detail-cost-cell">${detailCost(level)}</td><td>${esc(detailTime(level))}</td><td>${esc(detailRequirement(level))}</td></tr>`;
  }).join('');
  document.getElementById('detaillevels').innerHTML=visible;
  document.getElementById('detailpageinfo').textContent=detailPageSize==='all'?`Alle ${total} Level`:`${start+1}–${end} von ${total}`;
@@ -677,12 +712,17 @@ function jumpToCurrentDetailLevel(){
 function closeItemDetail(){show(detailReturnPage)}
 function renderList(){
  if(!document.getElementById('items'))return;
- let ks=sections(),q=(document.getElementById('search')?.value||'').toLowerCase(),cat=document.getElementById('category')?.value||'all',sort=document.getElementById('sort')?.value||'name',vf=document.getElementById('villagefilter')?.value||'all';
- let a=rows.filter(r=>ks.includes(r.section)&&(vf==='all'||r.village===vf)&&(cat==='all'||cat===r.section)&&(`${r.name||''} ${keys[r.section]} ${r.lvl}`).toLowerCase().includes(q));
+ let ks=sections(),q=(document.getElementById('search')?.value||'').toLowerCase(),cat=document.getElementById('category')?.value||'all',sort=document.getElementById('sort')?.value||'name',vf=document.getElementById('villagefilter')?.value||'all',quickfilter=document.getElementById('quickfilter')?.value||'all';
+ const ctx=capContext();
+ let a=rows.filter(r=>{
+  if(!ks.includes(r.section)||(vf!=='all'&&r.village!==vf)||(cat!=='all'&&cat!==r.section)||!(`${r.name||''} ${keys[r.section]} ${r.lvl}`).toLowerCase().includes(q))return false;
+  if(quickfilter==='upgrading')return r.timer>0;
+  if(quickfilter==='not-maxed'){const max=autoMaxLevel(r,ctx);return Number.isFinite(max)&&max>0&&r.lvl<max}
+  return true;
+ });
  if(sort==='level')a.sort((x,y)=>y.lvl-x.lvl);else if(sort==='name')a.sort((x,y)=>(x.name||keys[x.section]).localeCompare(y.name||keys[y.section]));else a.sort((x,y)=>(x.name||keys[x.section]).localeCompare(y.name||keys[y.section]));
  document.getElementById('listcount').textContent=a.reduce((n,r)=>n+r.cnt,0)+' Einheiten · '+a.length+' Datensätze';
  let groups={};a.forEach(r=>(groups[r.section]??=[]).push(r));
- const ctx=capContext();
  const icons={buildings:'🏰',traps:'💣',heroes:'🦸',units:'⚔️',spells:'✨',siege_machines:'🚜',pets:'🐾',equipment:'🛡️',buildings2:'🏗️',traps2:'💣',units2:'⚔️',heroes2:'🦸'};
  document.getElementById('items').innerHTML=Object.entries(groups).map(([section,list])=>{
    let total=list.reduce((n,r)=>n+r.cnt,0);
@@ -701,17 +741,54 @@ function renderList(){
    return `<section class="ninja-section"><div class="ninja-heading">${esc(keys[section])}</div><div class="ninja-summary">${total} Einheiten · <b>${list.length}</b> Einträge · Levelübersicht</div>`+
    [...itemGroups.values()].map(({title,items})=>{const groupCount=items.reduce((n,r)=>n+r.cnt,0),countLabel=items.length>1||groupCount>1?` <small>${groupCount}×</small>`:'';return `<div class="ninja-item-group"><div class="ninja-item-heading">${esc(title)}${countLabel}</div>`+
      items.map(r=>{let m=meta.items[key(r)]||{},max=autoMaxLevel(r,ctx),done=max>0&&r.lvl>=max,icon=entityImage(r),progress=max?Math.min(100,Math.max(0,Math.round(r.lvl/max*100))):0,remaining=max?Math.max(0,max-r.lvl):null,capText=max?capSourceText(r,ctx,max):'Keine passenden Wiki-Leveldaten';
-       return `<article class="ninja-row item-detail-row" role="button" tabindex="0" title="Levelübersicht für ${esc(r.name||keys[section])} öffnen" onclick="openItemDetail('${r.section}',${r.index})" onkeydown="if(event.key==='Enter'||event.key===' ')openItemDetail('${r.section}',${r.index})"><div class="ninja-left"><div class="ninja-icon">${icon}</div><div class="ninja-level">Lvl ${r.lvl}${r.cnt>1?` <small>×${r.cnt}</small>`:''}</div><button class="ninja-up" title="Upgrade vormerken" aria-label="Upgrade für ${esc(r.name||keys[section])} vormerken" onclick="event.stopPropagation();quickPlan('${r.section}',${r.index})">⬆</button></div><div class="ninja-right"><div class="level-overview"><strong>${max?`Level ${r.lvl} von ${max}`:`Level ${r.lvl}`}</strong><span>${done?'Maximallevel erreicht':max?`${remaining} Level bis zum Maximum`:'Maximallevel nicht verfügbar'}</span></div>${max?`<div class="level-progress" role="progressbar" aria-label="Fortschritt ${esc(r.name||keys[section])}" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div>`:''}</div></article>`+
+       return `<article class="ninja-row item-detail-row" role="button" tabindex="0" title="Levelübersicht für ${esc(r.name||keys[section])} öffnen" onclick="openItemDetail('${r.section}',${r.index})" onkeydown="if(event.key==='Enter'||event.key===' ')openItemDetail('${r.section}',${r.index})"><div class="ninja-left"><div class="ninja-icon">${icon}</div><div class="ninja-level">Lvl ${r.lvl}${r.cnt>1?` <small>×${r.cnt}</small>`:''}</div><button class="ninja-up" title="Upgrade vormerken" aria-label="Upgrade für ${esc(r.name||keys[section])} vormerken" onclick="event.stopPropagation();quickPlan('${r.section}',${r.index})">⬆</button></div><div class="ninja-right"><div class="level-overview"><strong>${max?`Level ${r.lvl} von ${max}`:`Level ${r.lvl}`}</strong><span>${r.timer>0?'Upgrade läuft':done?'Maximallevel erreicht':max?`${remaining} Level bis zum Maximum`:'Maximallevel nicht verfügbar'}</span></div>${max?`<div class="level-progress" role="progressbar" aria-label="Fortschritt ${esc(r.name||keys[section])}" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div>`:''}</div></article>`+
        `<div class="ninja-edit"><label>Level <input type="number" min="0" ${max?`max="${max}"`:''} step="1" value="${r.lvl}" onchange="changeLevel('${r.section}',${r.index},this.value,${max||'null'})"></label><span class="cap-note">${esc(capText)}</span><input aria-label="Notiz" placeholder="Notiz" value="${esc(m.note||'')}" onchange="changeNote('${r.section}',${r.index},this.value)"></div>`;
      }).join('')+'</div>'}).join('')+'</section>';
- }).join('')||'<div class="ninja-empty">Keine Einträge gefunden. Importiere zuerst deinen Dorfexport.</div>';
+ }).join('')||(rows.length?'<div class="ninja-empty">Keine Einträge entsprechen deiner Auswahl.</div>':'<div class="ninja-empty">Keine Einträge gefunden. Importiere zuerst deinen Dorfexport.</div>');
 }
-function quickPlan(k,i){let r=rows.find(x=>x.section===k&&x.index===i);if(!r)return;meta.plans.push({id:Date.now(),done:false,name:r.name||keys[k],level:r.lvl,target:'',builder:'',start:'',note:'Aus Gebäudeübersicht vorgemerkt'});saveMeta();renderPlans();alert('Upgrade wurde im Planer vorgemerkt.')}
+async function quickPlan(k,i){
+ let r=rows.find(x=>x.section===k&&x.index===i);
+ if(!r)return;
+ let catalogReady=gameCatalog.size>0;
+ if(!catalogReady)catalogReady=await loadGameCatalog();
+ r=rows.find(x=>x.section===k&&x.index===i);
+ if(!r)return;
+ const target=Number(r.lvl)+1,item=catalogItem(k,r.id);
+ const level=catalogLevelsForItem(item).find((entry,index)=>detailLevelNumber(entry,index)===target)||null;
+ const costs=level?detailCostValues(level):null,duration=level?detailDurationSeconds(level):null;
+ const knownCosts=costs?.length?costs:null,automaticData=!!level&&!!knownCosts&&duration!==null;
+ meta.plans.push({id:Date.now(),done:false,name:r.name||keys[k],level:r.lvl,target,builder:'',start:'',costs:knownCosts,durationSeconds:duration,note:automaticData?'Aus Gebäudeübersicht vorgemerkt':!catalogReady?`Katalogdaten konnten nicht geladen werden: ${gameCatalogError||'unbekannter Fehler'}`:'Kosten oder Dauer für das Ziel-Level nicht verfügbar'});
+ saveMeta();renderPlans();
+ alert(automaticData?'Nächstes Level mit Kosten und Dauer wurde im Planer vorgemerkt.':'Nächstes Level wurde vorgemerkt; Kosten oder Dauer waren nicht vollständig verfügbar.');
+}
 function changeLevel(k,i,v,max){if(!data[k]?.[i])return;const level=Number(v),cap=Number(max);if(!Number.isInteger(level)||level<0||(Number.isFinite(cap)&&cap>0&&level>cap)){alert(Number.isFinite(cap)&&cap>0?`Level muss zwischen 0 und ${cap} liegen.`:'Bitte ein gültiges Level ab 0 eingeben.');update();return}data[k][i].lvl=level;localStorage.setItem(DATA,JSON.stringify(data));buildRows();update()}function changeNote(k,i,v){let z=meta.items[k+':'+i]||{};z.note=v;meta.items[k+':'+i]=z;saveMeta()}
 
 function autoAssignBuilders(){let n={home:0,builder:0};timers().forEach(r=>{let k=key(r);if(meta.builders[k])return;let v=r.village==='builder'?'builder':'home';n[v]++;meta.builders[k]=v==='builder'?'Vorschlag Bauarbeiterbasis '+n[v]:'Vorschlag Bauarbeiter '+n[v]});saveMeta();renderBuilders()}function renderBuilders(){let t=timers();document.getElementById('builderassign').innerHTML=t.length?'<div class="actions" style="margin-bottom:12px"><button class="btn gold" onclick="autoAssignBuilders()">Automatisch zuordnen (Vorschläge)</button></div>'+t.map(r=>`<div class="rowitem split"><div><b>${esc(r.name||keys[r.section])}</b><br><small>${esc(village(r.section)==='builder'?'Bauarbeiterbasis':'Heimatdorf')} · Level ${r.lvl} · Timer-Rohwert ${Number(r.timer).toLocaleString('de-DE')}</small></div><input class="field" style="max-width:220px" placeholder="Bauarbeiter-Zuordnung" value="${esc(meta.builders[key(r)]||'')}" onchange="setBuilder('${r.section}',${r.index},this.value)"></div>`).join(''):'<div class="empty">Keine Timer zum Zuordnen vorhanden.</div>'}function setBuilder(k,i,v){let r=rows.find(x=>x.section===k&&x.index===i);if(!r)return;meta.builders[key(r)]=v;saveMeta()}
-function addPlan(){let name=document.getElementById('planname').value.trim();if(!name)return alert('Bitte einen Namen für das Upgrade eingeben.');let current=Number(document.getElementById('planlevel').value),target=Number(document.getElementById('plantarget').value);if(document.getElementById('plantarget').value&&document.getElementById('planlevel').value&&target<=current)return alert('Das Ziel-Level muss höher als das aktuelle Level sein.');meta.plans.push({id:Date.now(),done:false,name,level:document.getElementById('planlevel').value,target:document.getElementById('plantarget').value,builder:document.getElementById('planbuilder').value,start:document.getElementById('planstart').value,note:document.getElementById('plannote').value});saveMeta();renderPlans();['planname','planlevel','plantarget','planbuilder','planstart','plannote'].forEach(id=>document.getElementById(id).value='')}
-function renderPlans(){let p=meta.plans||[];document.getElementById('plans').innerHTML=p.length?p.map(x=>`<div class="rowitem split"><div><b>${x.done?'✓ ':''}${esc(x.name)}</b><div class="mini">Level ${esc(x.level||'?')} → ${esc(x.target||'?')} · ${esc(x.builder||'Kein Bauarbeiter')} · ${esc(x.start||'Start offen')}</div><small>${esc(x.note||'')}</small></div><div class="actions"><button class="btn" onclick="togglePlan(${x.id})">${x.done?'Offen':'Erledigt'}</button><button class="btn danger" onclick="removePlan(${x.id})">Entfernen</button></div></div>`).join(''):'<div class="empty">Noch keine Upgrades geplant.</div>'}function togglePlan(id){let x=meta.plans.find(x=>x.id===id);if(x)x.done=!x.done;saveMeta();renderPlans()}function removePlan(id){meta.plans=meta.plans.filter(x=>x.id!==id);saveMeta();renderPlans()}
+function addPlan(){let name=document.getElementById('planname').value.trim();if(!name)return alert('Bitte einen Namen für das Upgrade eingeben.');let current=Number(document.getElementById('planlevel').value),target=Number(document.getElementById('plantarget').value);if(document.getElementById('plantarget').value&&document.getElementById('planlevel').value&&target<=current)return alert('Das Ziel-Level muss höher als das aktuelle Level sein.');meta.plans.push({id:Date.now(),done:false,name,level:document.getElementById('planlevel').value,target:document.getElementById('plantarget').value,builder:document.getElementById('planbuilder').value,start:document.getElementById('planstart').value,note:document.getElementById('plannote').value,costs:null,durationSeconds:null});saveMeta();renderPlans();['planname','planlevel','plantarget','planbuilder','planstart','plannote'].forEach(id=>document.getElementById(id).value='')}
+function renderPlanTotals(plans){
+ const active=plans.filter(plan=>!plan.done),knownCosts=active.filter(plan=>Array.isArray(plan.costs)),knownTimes=active.filter(plan=>Number.isFinite(plan.durationSeconds)&&plan.durationSeconds>=0),totals=new Map();
+ knownCosts.forEach(plan=>plan.costs.forEach(cost=>{
+  if(!cost||typeof cost!=='object'||!Number.isFinite(Number(cost.amount)))return;
+  const resource=String(cost.resource||''),key=detailResourceKey(resource)||resource.toLowerCase();
+  const total=totals.get(key)||{resource,amount:0};
+  total.amount+=Number(cost.amount);totals.set(key,total);
+ }));
+ const costHtml=[...totals.values()].map(total=>detailCostItem(total.amount,total.resource)).join('')||'–';
+ const known=active.length?`${knownCosts.length}/${active.length} mit Kostendaten`: 'Keine offenen Upgrades';
+ const duration=knownTimes.length?formatDetailTime(knownTimes.reduce((sum,plan)=>sum+plan.durationSeconds,0)):'–';
+ const timeCoverage=active.length?`${knownTimes.length}/${active.length} mit Zeitdaten`:'Keine offenen Upgrades';
+ document.getElementById('plantotals').innerHTML=`<div class="plan-totals"><div class="plan-total"><b>Geplante Gesamtkosten <small>(${known})</small></b><div class="plan-costs">${costHtml}</div></div><div class="plan-total"><b>Upgradezeit gesamt (aufsummiert) <small>(${timeCoverage})</small></b><div>${duration}</div></div></div><p class="mini">Summen berücksichtigen nur offene Planungen mit verfügbaren Katalogdaten.</p>`;
+}
+function renderPlans(){
+ const plans=meta.plans||[];
+ renderPlanTotals(plans);
+ document.getElementById('plans').innerHTML=plans.length?plans.map(plan=>{
+  const costs=Array.isArray(plan.costs)?plan.costs.filter(cost=>cost&&typeof cost==='object').map(cost=>detailCostItem(cost.amount,cost.resource)).join('')||'–':'nicht ermittelt';
+  const duration=Number.isFinite(plan.durationSeconds)?formatDetailTime(plan.durationSeconds):'nicht ermittelt';
+  return `<div class="rowitem split"><div><b>${plan.done?'✓ ':''}${esc(plan.name)}</b><div class="mini">Level ${esc(plan.level??'?')} → ${esc(plan.target??'?')} · ${esc(plan.builder||'Kein Bauarbeiter')} · ${esc(plan.start||'Start offen')}</div><div class="mini plan-costs">Kosten: ${costs} · Dauer: ${esc(duration)}</div><small>${esc(plan.note||'')}</small></div><div class="actions"><button class="btn" onclick="togglePlan(${plan.id})">${plan.done?'Offen':'Erledigt'}</button><button class="btn danger" onclick="removePlan(${plan.id})">Entfernen</button></div></div>`;
+ }).join(''):'<div class="empty">Noch keine Upgrades geplant.</div>';
+}
+function togglePlan(id){let x=meta.plans.find(x=>x.id===id);if(x)x.done=!x.done;saveMeta();renderPlans()}function removePlan(id){meta.plans=meta.plans.filter(x=>x.id!==id);saveMeta();renderPlans()}
 
 load();
 setInterval(()=>{if(data){let t=timers();document.getElementById('timers').innerHTML=t.length?t.slice(0,5).map(timerHtml).join():'<div class="empty">Keine Timer erkannt.</div>';document.getElementById('alltimers').innerHTML=t.length?t.map(timerHtml).join():'<div class="empty">Keine laufenden Timer vorhanden.</div>'; }},30000);

@@ -1,4 +1,25 @@
-CLASH NINJA STYLE – VERSION 1.8.6
+CLASH NINJA STYLE – VERSION 1.8.11
+
+Änderungen in 1.8.11
+- Ein-Klick-Planung übernimmt das nächste Level sowie bekannte Kosten und Dauer
+- Offene Planungen zeigen aufsummierte Kosten je Ressource und die aufsummierte Upgradezeit
+- Fehlende Katalogwerte werden in der Planung ausdrücklich gekennzeichnet
+
+Änderungen in 1.8.10
+- Schnellfilter für nicht maximierte Elemente und laufende Upgrades ergänzt
+- Der Filter „Nicht maximiert“ berücksichtigt nur Einträge mit bekanntem Maximallevel
+- Bei laufenden Upgrades wird der Status direkt in der Levelübersicht markiert
+
+Änderungen in 1.8.9
+- Levelkosten zeigen das passende Ressourcenbild direkt neben dem Betrag
+- Upgradezeiten zeigen Stunden und Minuten auch dann, wenn ein Wert 0 ist
+
+Änderungen in 1.8.8
+- UI-Farben und Oberflächen nach aktuellen TH19-Gameplay-Referenzen mit stärkerem Metall-, Gold- und Upgrade-Button-Kontrast verfeinert
+
+Änderungen in 1.8.7
+- Benutzeroberfläche mit einer aktuellen Clash-of-Clans-inspirierten Dorf-Farbpalette, goldenen Rahmen und plastischen Schaltflächen überarbeitet
+- Mobile Kopfzeile und Profilansicht für schmale Bildschirme angepasst
 
 Änderungen in 1.8.3
 - Mehrfach vorhandene Verteidigungsgebäude und Fallen werden einzeln und separat bearbeitbar angezeigt
