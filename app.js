@@ -17,6 +17,7 @@ const names={
  guardians:{107000000:'Longshot',107000001:'Smasher',107000008:'Logger'},
  equipment:{90000000:'Barbarenpuppe',90000001:'Wutphiole',90000002:'Bogenschützenpuppe',90000003:'Unsichtbarkeitsphiole',90000004:'Ewiger Foliant',90000005:'Wutjuwel',90000006:'Suchender Schild',90000007:'Königsjuwel',90000008:'Erdbebenstiefel',90000009:'Lebensjuwel',90000010:'Riesenhandschuh',90000011:'Vampstache',90000012:'Heilerpuppe',90000013:'Riesenpfeil',90000014:'Gefrorener Pfeil',90000015:'Heilender Foliant',90000016:'Drachenflamme',90000017:'Spitze Kugel',90000019:'Spiky Ball',90000020:'Schlangenarmband',90000022:'Magic Mirror',90000024:'Haste Vial',90000032:'Fireball',90000034:'Rocket Spear',90000035:'Action Figure',90000039:'Stick Horse',90000040:'Dark Orb',90000041:'Metal Pants',90000042:'Noble Iron',90000043:'Henchmen Puppet',90000044:'Electro Boots',90000047:'Lavaloons',90000048:'Action Figure',90000049:'Snake Bracelet',90000050:'Heroic Torch',90000051:'Flame Bracelet',90000052:'Frost Flake',90000053:'Guardian Puppet',90000056:'Meteor Staff',90000057:'Totem',90000059:'Spirit Walk',90000060:'Frost Blast',90000061:'Giant Arrow'}
 };
+const OCR_NAME_ALIASES={'buildings:1000013':['Minenwerfer']};
 
 let data=null,rows=[],page='dashboard',detailReturnPage='dashboard',detailLevels=[],detailCurrentLevel=0,detailPageIndex=0,detailPageSize=10,meta={items:{},builders:{},plans:[]};const META='clash-progress-meta-v3',DATA='clash-progress-preview';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -791,4 +792,151 @@ function renderPlans(){
 function togglePlan(id){let x=meta.plans.find(x=>x.id===id);if(x)x.done=!x.done;saveMeta();renderPlans()}function removePlan(id){meta.plans=meta.plans.filter(x=>x.id!==id);saveMeta();renderPlans()}
 
 load();
+let trackerBridgeSeenAt='',trackerBridgeRunning=false,trackerBridgeCandidate='',trackerBridgeCandidateCount=0;
+function normalizeTrackerText(value){
+ return String(value||'').toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9]+/gi,' ').replace(/\s+/g,' ').trim();
+}
+function extractObservedLevel(text){
+ const normalizeDigits=value=>value.replace(/[Il|]/g,'1').replace(/[Gg]/g,'6').replace(/[^0-9]/g,'');
+ const levelValue='([0-9Il|](?:[\\s&.,\'’`´-]{0,2}[0-9Il|Gg])?)';
+ const targetContext=/\b(?:auf|to)\s+(?:level|lvl|stufe)\b/i.test(text);
+ const targetMatch=text.match(new RegExp('\\b(?:auf|to)\\s+(?:level|lvl|stufe)\\s*'+levelValue+'\\s*(?=(?:verbessern|upgrade|aufrüsten|aufwerten)\\b)','i'));
+ if(targetMatch){
+  const digits=normalizeDigits(targetMatch[1]);
+  const target=Number(digits);
+  return Number.isInteger(target)&&target>1?{level:target-1,target,source:'upgrade-target',ocrNumber:target,ocrDigits:digits.length}:null;
+ }
+ if(targetContext)return null;
+ const currentMatch=text.match(new RegExp('\\b(?:level|lvl|stufe)\\s*[:#.]?\\s*'+levelValue+'\\b','i'));
+ if(!currentMatch)return null;
+ const digits=normalizeDigits(currentMatch[1]);
+ const level=Number(digits);
+ return Number.isInteger(level)&&level>0?{level,target:level+1,source:'current-level',ocrNumber:level,ocrDigits:digits.length}:null;
+}
+async function resolveOcrItem(text){
+ if(!data)return null;
+ if(!gameCatalog.size)await loadGameCatalog();
+ const normalized=normalizeTrackerText(text);
+ const candidates=[];
+ rows.forEach(r=>{
+  const catalogName=catalogItem(r.section,r.id)?.name;
+  const namesToCheck=[r.name,wikiItemName(r),catalogName,names[r.section]?.[r.id],...(OCR_NAME_ALIASES[r.section+':'+Number(r.id)]||[])]
+   .filter((name,index,all)=>typeof name==='string'&&name.trim()&&all.indexOf(name)===index);
+  namesToCheck.forEach(name=>{
+   const clean=normalizeTrackerText(name);
+   if(clean&&normalized.includes(clean))candidates.push({r,name:name.trim(),matchLength:clean.length});
+  });
+ });
+ if(!candidates.length)return null;
+ candidates.sort((a,b)=>b.matchLength-a.matchLength);
+ const bestLength=candidates[0].matchLength;
+ const bestRows=[...new Map(candidates.filter(candidate=>candidate.matchLength===bestLength).map(candidate=>[key(candidate.r),candidate])).values()];
+ if(bestRows.length!==1)return {ambiguous:true,matches:bestRows.length};
+ const {r}=bestRows[0];
+ let observedLevel=extractObservedLevel(text);
+ const item=catalogItem(r.section,r.id);
+ const levels=catalogLevelsForItem(item);
+ if(observedLevel&&observedLevel.ocrDigits===1){
+  const low=observedLevel.ocrNumber,high=low+10;
+  const hasHighLevel=levels.some((entry,index)=>detailLevelNumber(entry,index)===high);
+  if(hasHighLevel){
+   const savedLevel=Number(r.lvl);
+   const savedTarget=observedLevel.source==='upgrade-target'?savedLevel+1:savedLevel;
+   if(savedTarget===high){
+    observedLevel=observedLevel.source==='upgrade-target'
+     ?{...observedLevel,level:high-1,target:high,ocrNumber:high}
+     :{...observedLevel,level:high,target:high+1,ocrNumber:high};
+   }else if(savedTarget!==low){
+    return {r,levelAmbiguous:true,low,high,confirmedName:r.name||bestRows[0].name};
+   }
+  }
+ }
+ const observedEntry=observedLevel?levels.find((entry,index)=>detailLevelNumber(entry,index)===(observedLevel.source==='upgrade-target'?observedLevel.target:observedLevel.level))||null:null;
+ if(observedLevel&&!observedEntry)return {r,observedLevel:null,invalidLevel:true,confirmedName:r.name||bestRows[0].name};
+ const targetEntry=observedLevel?levels.find((entry,index)=>detailLevelNumber(entry,index)===observedLevel.target)||null:null;
+ const costs=targetEntry?detailCostValues(targetEntry):null;
+ const duration=targetEntry?detailDurationSeconds(targetEntry):null;
+ return {r,observedLevel,costs:Array.isArray(costs)&&costs.length?costs:null,duration,confirmedName:r.name||bestRows[0].name};
+}
+async function pollTrackerBridge(){
+ if(trackerBridgeRunning)return;
+ trackerBridgeRunning=true;
+ try{
+  const response=await fetch('http://127.0.0.1:4177/status',{cache:'no-store'});
+  if(!response.ok){
+   document.getElementById('livebridge').textContent='Getrennt';
+   document.getElementById('livebridgemsg').textContent=response.status===403?'Website-Origin nicht freigegeben':'Desktop-App antwortet mit HTTP '+response.status;
+   return;
+  }
+  const upgrade=await response.json();
+  document.getElementById('livebridge').textContent=upgrade.detected?'OCR':'Verbunden';
+  document.getElementById('livebridgemsg').textContent=upgrade.detected?'Gebäude-Infofeld wird ausgewertet':'Desktop-App aktiv · warte auf Gebäude-Infofeld';
+  if(!upgrade.detected){
+   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
+   return;
+  }
+  if(!upgrade.detectedAt||upgrade.detectedAt===trackerBridgeSeenAt)return;
+  trackerBridgeSeenAt=upgrade.detectedAt;
+  if(!data){
+   document.getElementById('livebridgemsg').textContent='Zuerst Spielerexport importieren';
+   return;
+  }
+  const timer=String(upgrade.timer||'').trim();
+  const text=String(upgrade.text||'').replace(/\s+/g,' ').trim();
+  const resolved=await resolveOcrItem(text);
+  if(resolved?.ambiguous){
+   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
+   document.getElementById('livebridgemsg').textContent='Gebäudetyp mehrfach vorhanden – keine automatische Änderung';
+   return;
+  }
+  if(!resolved){
+   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
+   document.getElementById('livebridgemsg').textContent='Gebäudename im Infofeld nicht sicher erkannt';
+   return;
+  }
+  if(resolved.invalidLevel){
+   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
+   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} erkannt – Level passt nicht zum Katalog`;
+   return;
+  }
+  if(resolved.levelAmbiguous){
+   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
+   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName}: Level ${resolved.low} oder ${resolved.high} – Export-Level prüfen`;
+   return;
+  }
+  const levelInfo=resolved.observedLevel;
+  if(!levelInfo){
+   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
+   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} erkannt – Level im Infofeld nicht lesbar`;
+   return;
+  }
+  const signature='ocr:'+resolved.r.section+':'+resolved.r.id+':'+levelInfo.level+':'+levelInfo.target;
+  if(signature===trackerBridgeCandidate)trackerBridgeCandidateCount++;
+  else{trackerBridgeCandidate=signature;trackerBridgeCandidateCount=1}
+  document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} · Level ${levelInfo.level} · Bestätigung ${Math.min(trackerBridgeCandidateCount,3)}/3`;
+  if(trackerBridgeCandidateCount<3)return;
+
+  const trackedItem=data[resolved.r.section]?.[resolved.r.index];
+  if(trackedItem&&Number(trackedItem.lvl)!==levelInfo.level){
+   trackedItem.lvl=levelInfo.level;
+   localStorage.setItem(DATA,JSON.stringify(data));
+   buildRows();update();
+  }
+  const exists=(meta.plans||[]).some(plan=>plan.sourceSignature===signature);
+  if(!exists){
+   meta.plans.push({id:Date.now(),done:false,name:resolved.confirmedName,level:levelInfo.level,target:levelInfo.target,builder:'',start:'',costs:resolved.costs||null,durationSeconds:resolved.duration??null,note:['Level dreimal aus dem Gebäude-Infofeld gelesen','Automatisch aus lokaler Clash-Ninja-Live-OCR','Timer: '+(timer||'nicht erkannt'),'OCR-Kontext: '+(text||'nicht verfügbar')].join(' · '),sourceSignature:signature});
+   saveMeta();renderPlans();
+   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} · Level ${levelInfo.level} übernommen und Upgrade vorgemerkt`;
+  }
+ }catch(e){
+  document.getElementById('livebridge').textContent='Getrennt';
+  document.getElementById('livebridgemsg').textContent='App nicht erreichbar oder lokaler Zugriff blockiert: '+(e?.message||String(e));
+ }finally{
+  trackerBridgeRunning=false;
+ }
+}
+setInterval(pollTrackerBridge,3000);
+pollTrackerBridge();
 setInterval(()=>{if(data){let t=timers();document.getElementById('timers').innerHTML=t.length?t.slice(0,5).map(timerHtml).join():'<div class="empty">Keine Timer erkannt.</div>';document.getElementById('alltimers').innerHTML=t.length?t.map(timerHtml).join():'<div class="empty">Keine laufenden Timer vorhanden.</div>'; }},30000);
