@@ -1,8 +1,10 @@
-CLASH NINJA STYLE – VERSION 1.8.3
+CLASH NINJA STYLE – VERSION 1.8.4
 
 Änderungen in 1.8.3
 - Mehrfach vorhandene Verteidigungsgebäude und Fallen werden einzeln und separat bearbeitbar angezeigt
 - Andere mehrfach vorhandene Einträge bleiben gruppiert
+- Beim Klicken auf ein Element öffnet sich eine eigene Ebene mit allen verfügbaren Leveldaten
+- Kosten und Upgradezeiten werden aus dem Spieldatenkatalog angezeigt; das aktuelle Level ist hervorgehoben
 
 Änderungen in 1.8.2
 - Maximallevel für Heimatdorf und Bauarbeiterbasis werden aus Tabellen des Clash of Clans Wiki gelesen

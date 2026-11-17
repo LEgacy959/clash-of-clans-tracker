@@ -80,6 +80,9 @@ body{background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,s
 .ninja-item-group{margin:10px 12px 12px}
 .ninja-item-heading{background:transparent;text-align:left;border-bottom:1px solid var(--line);font-size:16px;padding:10px 14px}
 .ninja-row{grid-template-columns:minmax(170px,28%) minmax(0,1fr);min-height:84px;border-bottom:1px solid var(--line);background:transparent}
+.item-detail-row{cursor:pointer;transition:background .15s ease,box-shadow .15s ease}
+.item-detail-row:hover{background:#203650!important;box-shadow:inset 4px 0 #609ee2}
+.item-detail-row:focus-visible{outline:2px solid #8cc4ff;outline-offset:-2px}
 .ninja-row:nth-child(even){background:#1a2c42}
 .ninja-left{grid-template-columns:52px 1fr auto;grid-template-rows:auto;padding:10px 14px;gap:8px;border-color:var(--line)}
 .ninja-icon{grid-row:auto}
