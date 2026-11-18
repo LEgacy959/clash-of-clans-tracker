@@ -1,4 +1,9 @@
-CLASH NINJA STYLE – VERSION 1.8.11
+CLASH NINJA STYLE – VERSION 1.8.12
+
+Änderungen in 1.8.12
+- Importfehler behoben, der nach dem Laden der JSON-Datei durch eine fehlende Dashboard-Referenz ausgelöst wurde
+- JSON-Import akzeptiert UTF-8/UTF-16-Dateien, Backup-Wrapper, playerData/data-Wrapper und eingefügte JSON-Codeblöcke
+- Große Listen werden nur beim Öffnen der jeweiligen Ansicht neu gerendert; Maximallevel-Suchen verwenden Cache und Binärsuche
 
 Änderungen in 1.8.11
 - Ein-Klick-Planung übernimmt das nächste Level sowie bekannte Kosten und Dauer
