@@ -51,7 +51,7 @@ function buildRows(){splitDefenseStacks();rows=[];Object.entries(keys).forEach((
 function importRaw(raw){try{let incoming=typeof raw==='string'?parseJsonText(raw):raw;let nextData,nextMeta=meta;if(incoming&&incoming.export&&incoming.tracker){nextData=parse(incoming.export);nextMeta={items:incoming.tracker.items||meta.items||{},builders:incoming.tracker.builders||meta.builders||{},plans:Array.isArray(incoming.tracker.plans)?incoming.tracker.plans:meta.plans||[]}}else nextData=parse(incoming);if(data&&!confirm('Vorhandenen Spielstand durch den Import ersetzen? Exportiere vorher ein Backup, wenn du den alten Stand behalten möchtest.'))return;localStorage.setItem(DATA,JSON.stringify(nextData));data=nextData;meta=nextMeta;saveMeta();buildRows();update();document.getElementById('importmsg').textContent='Import erfolgreich: '+rows.length+' Datensätze erkannt. Deine Daten bleiben lokal auf diesem Gerät.';show('dashboard')}catch(e){document.getElementById('importmsg').textContent='Import fehlgeschlagen: '+e.message}}
 async function readJsonFile(file){const bytes=new Uint8Array(await file.arrayBuffer());if(bytes[0]===0xff&&bytes[1]===0xfe)return new TextDecoder('utf-16le').decode(bytes.subarray(2));if(bytes[0]===0xfe&&bytes[1]===0xff)return new TextDecoder('utf-16be').decode(bytes.subarray(2));return new TextDecoder('utf-8').decode(bytes)}
 document.getElementById('file').addEventListener('change',async e=>{let f=e.target.files[0];if(f){try{if(f.size>25*1024*1024)throw Error('Datei ist größer als 25 MB.');importRaw(await readJsonFile(f))}catch(err){document.getElementById('importmsg').textContent='Datei konnte nicht gelesen werden: '+err.message}e.target.value=''}});function importPaste(){importRaw(document.getElementById('paste').value)}
-function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.12',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.13',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 function clearData(){if(confirm('Spielstand und Tracker-Metadaten auf diesem Gerät wirklich löschen?')){localStorage.removeItem(DATA);localStorage.removeItem(META);data=null;rows=[];meta={items:{},builders:{},plans:[]};update();show('dashboard')}}
 function count(k){return rows.filter(r=>r.section===k).reduce((n,r)=>n+r.cnt,0)}function timers(){return rows.filter(r=>r.timer>0)}
 function countSections(list){return rows.filter(r=>list.includes(r.section)).reduce((n,r)=>n+r.cnt,0)}
@@ -827,6 +827,32 @@ function extractObservedLevel(text){
  const level=Number(digits);
  return Number.isInteger(level)&&level>0?{level,target:level+1,source:'current-level',ocrNumber:level,ocrDigits:digits.length}:null;
 }
+function levenshteinDistance(a,b){
+ if(Math.abs(a.length-b.length)>3)return 4;
+ let previous=Array.from({length:b.length+1},(_,i)=>i),current=new Array(b.length+1);
+ for(let i=1;i<=a.length;i++){
+  current[0]=i;let rowMinimum=i;
+  for(let j=1;j<=b.length;j++){
+   current[j]=Math.min(current[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));
+   rowMinimum=Math.min(rowMinimum,current[j]);
+  }
+  if(rowMinimum>3)return 4;
+  [previous,current]=[current,previous];
+ }
+ return previous[b.length];
+}
+function fuzzyNameScore(ocrText,name){
+ const nameWords=normalizeTrackerText(name).split(' ').filter(Boolean),compactName=nameWords.join('');
+ if(compactName.length<8||!nameWords.length)return 0;
+ const maxEdits=compactName.length>=18?3:compactName.length>=10?2:1,words=ocrText.split(' ');let best=0;
+ for(let start=0;start<words.length;start++)for(let count=Math.max(1,nameWords.length-1);count<=nameWords.length+1&&start+count<=words.length;count++){
+  const candidate=words.slice(start,start+count).join('');
+  if(Math.abs(candidate.length-compactName.length)>maxEdits)continue;
+  const distance=levenshteinDistance(compactName,candidate);
+  if(distance<=maxEdits)best=Math.max(best,1-distance/Math.max(compactName.length,candidate.length));
+ }
+ return best;
+}
 async function resolveOcrItem(text){
  if(!data)return null;
  if(!gameCatalog.size)await loadGameCatalog();
@@ -838,15 +864,18 @@ async function resolveOcrItem(text){
    .filter((name,index,all)=>typeof name==='string'&&name.trim()&&all.indexOf(name)===index);
   namesToCheck.forEach(name=>{
    const clean=normalizeTrackerText(name);
-   if(clean&&normalized.includes(clean))candidates.push({r,name:name.trim(),matchLength:clean.length});
+   if(!clean)return;
+   if(normalized.includes(clean)){candidates.push({r,name:name.trim(),matchLength:clean.length,score:1,minimumScore:1});return}
+   const score=fuzzyNameScore(normalized,clean),minimumScore=clean.replace(/\s/g,'').length>=18?.82:clean.replace(/\s/g,'').length>=10?.85:.9;
+   if(score>=minimumScore)candidates.push({r,name:name.trim(),matchLength:clean.length,score,minimumScore});
   });
  });
  if(!candidates.length)return null;
- candidates.sort((a,b)=>b.matchLength-a.matchLength);
- const bestLength=candidates[0].matchLength;
- const bestRows=[...new Map(candidates.filter(candidate=>candidate.matchLength===bestLength).map(candidate=>[key(candidate.r),candidate])).values()];
- if(bestRows.length!==1)return {ambiguous:true,matches:bestRows.length};
- const {r}=bestRows[0];
+ candidates.sort((a,b)=>b.score-a.score||b.matchLength-a.matchLength);
+ const bestByRow=new Map();candidates.forEach(candidate=>{const rowKey=key(candidate.r),previous=bestByRow.get(rowKey);if(!previous||candidate.score>previous.score||candidate.score===previous.score&&candidate.matchLength>previous.matchLength)bestByRow.set(rowKey,candidate)});
+ const bestRows=[...bestByRow.values()].sort((a,b)=>b.score-a.score||b.matchLength-a.matchLength),best=bestRows[0];
+ if(bestRows.length>1&&best.score-bestRows[1].score<.08)return {ambiguous:true,matches:bestRows.filter(candidate=>best.score-candidate.score<.08).length};
+ const {r}=best;
  let observedLevel=extractObservedLevel(text);
  const item=catalogItem(r.section,r.id);
  const levels=catalogLevelsForItem(item);

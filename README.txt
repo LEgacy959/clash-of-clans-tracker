@@ -1,4 +1,8 @@
-CLASH NINJA STYLE – VERSION 1.8.12
+CLASH NINJA STYLE – VERSION 1.8.13
+
+Änderungen in 1.8.13
+- OCR-Namensabgleich toleriert kleine Schreibfehler und abweichende Wortabstände
+- Bei ähnlich guten Treffern bleibt die automatische Übernahme aus Sicherheitsgründen gesperrt
 
 Änderungen in 1.8.12
 - Importfehler behoben, der nach dem Laden der JSON-Datei durch eine fehlende Dashboard-Referenz ausgelöst wurde
