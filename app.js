@@ -17,13 +17,11 @@ const names={
  guardians:{107000000:'Longshot',107000001:'Smasher',107000008:'Logger'},
  equipment:{90000000:'Barbarenpuppe',90000001:'Wutphiole',90000002:'Bogenschützenpuppe',90000003:'Unsichtbarkeitsphiole',90000004:'Ewiger Foliant',90000005:'Wutjuwel',90000006:'Suchender Schild',90000007:'Königsjuwel',90000008:'Erdbebenstiefel',90000009:'Lebensjuwel',90000010:'Riesenhandschuh',90000011:'Vampstache',90000012:'Heilerpuppe',90000013:'Riesenpfeil',90000014:'Gefrorener Pfeil',90000015:'Heilender Foliant',90000016:'Drachenflamme',90000017:'Spitze Kugel',90000019:'Spiky Ball',90000020:'Schlangenarmband',90000022:'Magic Mirror',90000024:'Haste Vial',90000032:'Fireball',90000034:'Rocket Spear',90000035:'Action Figure',90000039:'Stick Horse',90000040:'Dark Orb',90000041:'Metal Pants',90000042:'Noble Iron',90000043:'Henchmen Puppet',90000044:'Electro Boots',90000047:'Lavaloons',90000048:'Action Figure',90000049:'Snake Bracelet',90000050:'Heroic Torch',90000051:'Flame Bracelet',90000052:'Frost Flake',90000053:'Guardian Puppet',90000056:'Meteor Staff',90000057:'Totem',90000059:'Spirit Walk',90000060:'Frost Blast',90000061:'Giant Arrow'}
 };
-const OCR_NAME_ALIASES={'buildings:1000013':['Minenwerfer']};
-
-let data=null,rows=[],page='dashboard',detailReturnPage='dashboard',detailLevels=[],detailCurrentLevel=0,detailPageIndex=0,detailPageSize=10,meta={items:{},builders:{},plans:[]};const META='clash-progress-meta-v3',DATA='clash-progress-preview';
+let data=null,rows=[],page='dashboard',detailReturnPage='dashboard',detailLevels=[],detailCurrentLevel=0,detailPageIndex=0,detailPageSize=10,meta={items:{},builders:{},plans:[]},selectedVillage='home';const META='clash-progress-meta-v3',DATA='clash-progress-preview',VILLAGE_VIEW='clash-progress-village-view';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function parseJsonText(raw){let text=String(raw??'').replace(/^\uFEFF/,'').trim();const fenced=text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);if(fenced)text=fenced[1];return JSON.parse(text)}
 function parse(raw){let x=typeof raw==='string'?parseJsonText(raw):raw;for(let depth=0;depth<4&&x&&typeof x==='object'&&!Array.isArray(x);depth++){if(x.export&&typeof x.export==='object'){x=x.export;continue}if(x.playerData&&typeof x.playerData==='object'&&Array.isArray(x.playerData.buildings)){x=x.playerData;continue}if(x.data&&typeof x.data==='object'&&!Array.isArray(x.data)&&!Array.isArray(x.buildings)){x=x.data;continue}if(x.player&&typeof x.player==='object'&&Array.isArray(x.player.buildings)){x=x.player;continue}break}if(!x||typeof x!=='object'||Array.isArray(x)||!Array.isArray(x.buildings))throw Error('Kein gültiger Clash-of-Clans-Export: Die Gebäude-Liste „buildings“ fehlt.');const tag=x.tag??x.playerTag??x.player?.tag??x.playerData?.tag;if(typeof tag!=='string'||!tag.trim())throw Error('Kein gültiger Clash-of-Clans-Export: Spieler-Tag fehlt (erwartet „tag“ oder „playerTag“).');if(!x.tag)x={...x,tag};for(const [k,v] of Object.entries(x)){if(Array.isArray(v)&&keys[k]&&!v.every(o=>o&&typeof o==='object'&&!Array.isArray(o)))throw Error('Ungültige Einträge im Bereich '+keys[k]+'.')}return x}
-function load(){try{meta=JSON.parse(localStorage.getItem(META)||localStorage.getItem('clash-progress-meta-v2')||'{"items":{},"builders":{},"plans":[]}');meta={items:meta.items||{},builders:meta.builders||{},plans:Array.isArray(meta.plans)?meta.plans:[]};saveMeta()}catch(e){meta={items:{},builders:{},plans:[]}}try{let s=localStorage.getItem(DATA);if(s){data=parse(s);buildRows();update()}}catch(e){console.warn('Gespeicherter Spielstand konnte nicht geladen werden:',e);}}renderPlans();
+function load(){try{selectedVillage=localStorage.getItem(VILLAGE_VIEW)==='builder'?'builder':'home';meta=JSON.parse(localStorage.getItem(META)||localStorage.getItem('clash-progress-meta-v2')||'{"items":{},"builders":{},"plans":[]}');meta={items:meta.items||{},builders:meta.builders||{},plans:Array.isArray(meta.plans)?meta.plans:[]};saveMeta()}catch(e){meta={items:{},builders:{},plans:[]}}try{let s=localStorage.getItem(DATA);if(s){data=parse(s);buildRows();update()}}catch(e){console.warn('Gespeicherter Spielstand konnte nicht geladen werden:',e);}}renderPlans();
 function saveMeta(){try{localStorage.setItem(META,JSON.stringify(meta))}catch(e){alert('Speichern fehlgeschlagen. Bitte exportiere ein Backup und prüfe den Speicherplatz im Browser.');throw e}}function key(r){return r.section+':'+r.index}
 function itemName(section,id){return names[section]?.[id]||null}
 function village(section){return ['buildings2','traps2','decos2','obstacles2','units2','heroes2'].includes(section)?'builder':'home'}
@@ -53,8 +51,8 @@ async function readJsonFile(file){const bytes=new Uint8Array(await file.arrayBuf
 document.getElementById('file').addEventListener('change',async e=>{let f=e.target.files[0];if(f){try{if(f.size>25*1024*1024)throw Error('Datei ist größer als 25 MB.');importRaw(await readJsonFile(f))}catch(err){document.getElementById('importmsg').textContent='Datei konnte nicht gelesen werden: '+err.message}e.target.value=''}});function importPaste(){importRaw(document.getElementById('paste').value)}
 function exportData(){if(!data)return alert('Noch kein Spielstand importiert.');let backup={app:'Clash Ninja Style',appVersion:'1.8.13',export:data,tracker:meta,backupCreated:new Date().toISOString()};let a=document.createElement('a'),u=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));a.href=u;a.download='clash-progress-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
 function clearData(){if(confirm('Spielstand und Tracker-Metadaten auf diesem Gerät wirklich löschen?')){localStorage.removeItem(DATA);localStorage.removeItem(META);data=null;rows=[];meta={items:{},builders:{},plans:[]};update();show('dashboard')}}
-function count(k){return rows.filter(r=>r.section===k).reduce((n,r)=>n+r.cnt,0)}function timers(){return rows.filter(r=>r.timer>0)}
-function countSections(list){return rows.filter(r=>list.includes(r.section)).reduce((n,r)=>n+r.cnt,0)}
+function count(k){return rows.filter(r=>r.section===k&&r.village===selectedVillage).reduce((n,r)=>n+r.cnt,0)}function timers(){return rows.filter(r=>r.timer>0&&r.village===selectedVillage)}
+function countSections(list){return rows.filter(r=>list.includes(r.section)&&r.village===selectedVillage).reduce((n,r)=>n+r.cnt,0)}
 function timerText(sec){sec=Math.max(0,Math.floor(sec));let d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);return [d?d+' T':'',h?h+' Std.':'',m?m+' Min.':''].filter(Boolean).join(' ')||(sec>0?'< 1 Min.':'Abgeschlossen')}
 function remainingTimer(r){let stamp=Number(data?.timestamp||0);if(!stamp)return r.timer;let elapsed=Math.max(0,Date.now()/1000-stamp);return Math.max(0,r.timer-elapsed)}
 let gameCatalog=new Map(),gameCatalogPromise=null,gameCatalogError='',defenseKeys=new Set();
@@ -502,9 +500,13 @@ function capSourceText(r,ctx,max){
  if(r.section==='equipment')return `Schmiede ${ctx.blacksmith||'—'}: ${max}`;
  return `Rathaus ${ctx.th||'—'}: ${max}`;
 }
-function progressStats(){let total=0,done=0,known=0,unknown=0;const ctx=capContext();rows.forEach(r=>{if(['decos','obstacles','decos2','obstacles2'].includes(r.section))return;const max=autoMaxLevel(r,ctx);if(max>0){total+=max*r.cnt;done+=Math.min(r.lvl,max)*r.cnt;known+=r.cnt}else unknown+=r.cnt});return {total,done,known,unknown,pct:total?Math.round(done/total*100):null}}
+function progressStats(){let total=0,done=0,known=0,unknown=0;const ctx=capContext();rows.forEach(r=>{if(r.village!==selectedVillage||['decos','obstacles','decos2','obstacles2'].includes(r.section))return;const max=autoMaxLevel(r,ctx);if(max>0){total+=max*r.cnt;done+=Math.min(r.lvl,max)*r.cnt;known+=r.cnt}else unknown+=r.cnt});return {total,done,known,unknown,pct:total?Math.round(done/total*100):null}}
 
 function getTownHallLevel(){
+ if(selectedVillage==='builder'){
+  const hall=buildingLevel(1000034,'buildings2');
+  return hall>0?hall:null;
+ }
  // Prefer an explicit level if a future export/API includes it.
  const direct=Number(data?.townHallLevel??data?.townhallLevel??data?.town_hall_level??data?.townhall_level??0);
  if(direct>0&&direct<30)return direct;
@@ -540,15 +542,77 @@ function ensureLevelData(){
   extendWikiItemCaps().then(()=>{if(data)update()});
  }
 }
-function update(){if(!data)return;document.getElementById('playerline').textContent='Letzter Import: '+new Date(Number(data.timestamp)*1000).toLocaleString('de-DE');document.getElementById('sbuild').textContent=countSections(['buildings','traps','buildings2','traps2']);document.getElementById('sheroes').textContent=countSections(['heroes','heroes2']);document.getElementById('stroops').textContent=countSections(['units','units2','spells','siege_machines']);
-let cats=[['buildings','Gebäude'],['traps','Fallen'],['heroes','Helden'],['units','Truppen'],['units2','Bauarbeiterbasis-Truppen'],['spells','Zauber'],['siege_machines','Belagerungsmaschinen'],['pets','Begleiter'],['equipment','Ausrüstung'],['helpers','Helfer'],['guardians','Wächter']];document.getElementById('bars').innerHTML=cats.map(([k,n])=>`<div class="rowitem split"><div><b>${n}</b><div class="mini">${count(k)} Einheiten</div></div><span>${count(k)}</span></div>`).join('');
-let home=countSections(['buildings','traps','units','siege_machines','heroes','spells','pets','equipment']),builder=countSections(['buildings2','traps2','units2','heroes2']);document.getElementById('villagebars').innerHTML=`<div class="rowitem"><div class="split"><b>Heimatdorf</b><b>${home}</b></div><div class="mini">Gebäude, Fallen, Truppen, Helden, Zauber & Ausrüstung</div></div><div class="rowitem"><div class="split"><b>Bauarbeiterbasis</b><b>${builder}</b></div><div class="mini">Gebäude, Fallen, Truppen & Helden</div></div>`;
-let t=timers();document.getElementById('timers').innerHTML=t.length?t.slice(0,5).map(timerHtml).join(''):'<div class="empty">Keine Timer erkannt.</div>';document.getElementById('alltimers').innerHTML=t.length?t.map(timerHtml).join(''):'<div class="empty">Keine laufenden Timer vorhanden.</div>';document.getElementById('timerwarning').textContent='Timer-Rohwerte werden unverändert angezeigt. Einheit/Umrechnung ist ohne bestätigte Export-Spezifikation nicht aktiviert.';
-let ps=progressStats();updateProgressOnly();document.getElementById('profiletag').textContent='Dein Dorf';let town=getTownHallLevel();document.getElementById('profiletitle').textContent=town?'Town Hall '+town:'Town Hall nicht erkannt';document.getElementById('profiletown').textContent=town?'Rathaus-Level '+town:'Rathaus-Level im Export nicht gefunden';let townImage=document.getElementById('profiletownimage');if(town){townImage.innerHTML=`<img class="townhall-art" src="https://assets.clashk.ing/buildings/home-village/town_hall/level_${town}.webp" alt="Rathaus Level ${town}" loading="lazy" onerror="this.replaceWith(document.createTextNode('🏰'))">`}else{townImage.textContent='🏰'}let pb=[['Structures',countSections(['buildings','traps'])],['Lab',countSections(['units','spells','siege_machines'])],['Heroes',countSections(['heroes'])],['Equipment',count('equipment')],['Pets',count('pets')]];document.getElementById('profilebars').innerHTML=pb.map(([n,v])=>`<div class="profilebar"><div class="progress"><i style="width:${ps.pct||0}%"></i></div><small>${n} · ${v}</small></div>`).join('');if(['buildings','heroes','troops'].includes(page))renderList();if(page==='upgrades')renderBuilders();if(page==='planner')renderPlans();ensureLevelData()}
+function update(){
+ if(!data)return;
+ const isBuilder=selectedVillage==='builder',ps=progressStats();
+ const buildSections=isBuilder?['buildings2','traps2','decos2','obstacles2']:['buildings','traps','decos','obstacles'];
+ const heroSections=isBuilder?['heroes2']:['heroes'];
+ const troopSections=isBuilder?['units2']:['units','spells','siege_machines'];
+ const categories=isBuilder
+  ?[['buildings2','Gebäude'],['traps2','Fallen'],['units2','Truppen'],['heroes2','Helden']]
+  :[['buildings','Gebäude'],['traps','Fallen'],['heroes','Helden'],['units','Truppen'],['spells','Zauber'],['siege_machines','Belagerungsmaschinen'],['pets','Begleiter'],['equipment','Ausrüstung'],['helpers','Helfer'],['guardians','Wächter']];
+ document.getElementById('playerline').textContent='Letzter Import: '+new Date(Number(data.timestamp)*1000).toLocaleString('de-DE');
+ document.getElementById('sbuildlabel').textContent=isBuilder?'GEBÄUDE & FALLEN':'GEBÄUDE & FALLEN';
+ document.getElementById('stroopslabel').textContent=isBuilder?'TRUPPEN':'TRUPPEN & ZAUBER';
+ document.getElementById('sbuild').textContent=countSections(buildSections);
+ document.getElementById('sheroes').textContent=countSections(heroSections);
+ document.getElementById('stroops').textContent=countSections(troopSections);
+ document.getElementById('bars').innerHTML=categories.map(([k,n])=>`<div class="rowitem split"><div><b>${n}</b><div class="mini">${count(k)} Einheiten</div></div><span>${count(k)}</span></div>`).join('');
+ const baseName=isBuilder?'Nachtbasis':'Heimatbasis';
+ document.getElementById('villagebars').innerHTML=`<div class="rowitem"><div class="split"><b>${baseName}</b><b>${countSections(buildSections.concat(heroSections,troopSections))}</b></div><div class="mini">${isBuilder?'Gebäude, Fallen, Truppen und Helden':'Gebäude, Fallen, Truppen, Helden, Zauber und Ausrüstung'}</div></div>`;
+ const t=timers();
+ document.getElementById('timers').innerHTML=t.length?t.slice(0,5).map(timerHtml).join(''):'<div class="empty">Keine Timer für diese Basis erkannt.</div>';
+ document.getElementById('alltimers').innerHTML=t.length?t.map(timerHtml).join(''):'<div class="empty">Keine laufenden Upgrades für diese Basis vorhanden.</div>';
+ document.getElementById('timerwarning').textContent='Timer-Rohwerte werden unverändert angezeigt. Einheit/Umrechnung ist ohne bestätigte Export-Spezifikation nicht aktiviert.';
+ updateProgressOnly();
+ document.getElementById('profiletag').textContent=isBuilder?'Deine Nachtbasis':'Dein Dorf';
+ document.getElementById('dashboardtitle').textContent=isBuilder?'Deine Nachtbasis auf einen Blick':'Dein Dorf auf einen Blick';
+ const town=getTownHallLevel(),hallName=isBuilder?'Bauarbeiterhalle':'Town Hall';
+ document.getElementById('profiletitle').textContent=town?`${hallName} ${town}`:`${hallName} nicht erkannt`;
+ document.getElementById('profiletown').textContent=town?(isBuilder?'Bauarbeiterhalle-Level '+town:'Rathaus-Level '+town):(isBuilder?'Bauarbeiterhallen-Level im Export nicht gefunden':'Rathaus-Level im Export nicht gefunden');
+ const townImage=document.getElementById('profiletownimage');
+ if(isBuilder)townImage.textContent='🌙';
+ else if(town)townImage.innerHTML=`<img class="townhall-art" src="https://assets.clashk.ing/buildings/home-village/town_hall/level_${town}.webp" alt="Rathaus Level ${town}" loading="lazy" onerror="this.replaceWith(document.createTextNode('🏰'))">`;
+ else townImage.textContent='🏰';
+ const profileBars=isBuilder
+  ?[['Gebäude',countSections(['buildings2','traps2'])],['Truppen',count('units2')],['Helden',count('heroes2')]]
+  :[['Gebäude',countSections(['buildings','traps'])],['Labor',countSections(['units','spells','siege_machines'])],['Helden',count('heroes')],['Ausrüstung',count('equipment')],['Begleiter',count('pets')]];
+ document.getElementById('profilebars').innerHTML=profileBars.map(([name,value])=>`<div class="profilebar"><div class="progress"><i style="width:${ps.pct||0}%"></i></div><small>${name} · ${value}</small></div>`).join('');
+ if(['buildings','heroes','troops'].includes(page))renderList();
+ if(page==='upgrades')renderBuilders();
+ if(page==='planner')renderPlans();
+ ensureLevelData();
+}
 function timerHtml(r){let b=meta.builders[key(r)]||'Nicht zugeordnet';return `<div class="timer"><div class="split"><strong>${esc(r.name||r.label)}</strong><span class="pill">${esc(village(r.section)==='builder'?'Bauarbeiterbasis':'Heimatdorf')}</span></div><small>${esc(keys[r.section])} · Level ${r.lvl}</small><div class="mini">Timer-Rohwert: <b>${Number(r.timer).toLocaleString('de-DE')}</b> · Bauarbeiter-Zuordnung: ${esc(b)}</div></div>`}
 function show(p){page=p;document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.page===p));['dashboard','listpage','detailpage','upgrades','planner','import'].forEach(id=>document.getElementById(id).classList.add('hide'));if(['buildings','heroes','troops'].includes(p)){document.getElementById('listpage').classList.remove('hide');document.getElementById('listtitle').textContent=p==='buildings'?'Gebäude & Verteidigung':p==='heroes'?'Helden':'Truppen, Zauber & Begleiter';setupCategories();renderList()}else if(p==='detail')document.getElementById('detailpage').classList.remove('hide');else{document.getElementById(p).classList.remove('hide');if(p==='upgrades')renderBuilders();if(p==='planner')renderPlans()}}
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>show(b.dataset.page));
-function sections(){return page==='buildings'?['buildings','traps','decos','obstacles','buildings2','traps2','decos2','obstacles2']:page==='heroes'?['heroes','heroes2']:['units','units2','spells','siege_machines','pets','equipment','helpers','guardians']}
+function updateVillageSwitch(){
+ document.querySelectorAll('.village-switch button').forEach(button=>{
+  const active=button.dataset.village===selectedVillage;
+  button.classList.toggle('active',active);
+  button.setAttribute('aria-pressed',String(active));
+ });
+ const isBuilder=selectedVillage==='builder';
+ document.getElementById('dashboardtitle').textContent=isBuilder?'Deine Nachtbasis auf einen Blick':'Dein Dorf auf einen Blick';
+ document.getElementById('profiletag').textContent=isBuilder?'Deine Nachtbasis':'Dein Dorf';
+ document.getElementById('profiletitle').textContent=isBuilder?'Bauarbeiterhalle —':'Town Hall —';
+ document.getElementById('profiletown').textContent=isBuilder?'Bauarbeiterhalle-Level im Export nicht gefunden':'Clash of Clans';
+ if(!data)document.getElementById('profiletownimage').textContent=isBuilder?'🌙':'🏰';
+}
+function setVillageView(value){
+ if(!['home','builder'].includes(value)||value===selectedVillage)return;
+ selectedVillage=value;
+ try{localStorage.setItem(VILLAGE_VIEW,selectedVillage)}catch(e){console.warn('Die gewählte Basis konnte nicht gespeichert werden:',e)}
+ updateVillageSwitch();
+ if(['buildings','heroes','troops'].includes(page))setupCategories();
+ if(data)update();
+ if(page==='detail'){show(detailReturnPage);return}
+ else if(['buildings','heroes','troops'].includes(page))show(page);
+}
+function sections(){
+ const available=page==='buildings'?['buildings','traps','decos','obstacles','buildings2','traps2','decos2','obstacles2']:page==='heroes'?['heroes','heroes2']:['units','units2','spells','siege_machines','pets','equipment','helpers','guardians'];
+ return available.filter(section=>village(section)===selectedVillage);
+}
 function setupCategories(){let s=document.getElementById('category'),old=s.value;s.innerHTML='<option value="all">Alle Kategorien</option>'+sections().map(k=>`<option value="${k}">${keys[k]}</option>`).join('');if([...s.options].some(o=>o.value===old))s.value=old}
 // Offizielle Spielgrafiken über die ClashKing-Asset-Sammlung. Unbekannte IDs erhalten
 // bewusst keinen falschen Platzhalter: nur eindeutig zugeordnete Assets werden angezeigt.
@@ -725,10 +789,10 @@ function jumpToCurrentDetailLevel(){
 function closeItemDetail(){show(detailReturnPage)}
 function renderList(){
  if(!document.getElementById('items'))return;
- let ks=sections(),q=(document.getElementById('search')?.value||'').toLowerCase(),cat=document.getElementById('category')?.value||'all',sort=document.getElementById('sort')?.value||'name',vf=document.getElementById('villagefilter')?.value||'all',quickfilter=document.getElementById('quickfilter')?.value||'all';
+ let ks=sections(),q=(document.getElementById('search')?.value||'').toLowerCase(),cat=document.getElementById('category')?.value||'all',sort=document.getElementById('sort')?.value||'name',quickfilter=document.getElementById('quickfilter')?.value||'all';
  const ctx=capContext();
  let a=rows.filter(r=>{
-  if(!ks.includes(r.section)||(vf!=='all'&&r.village!==vf)||(cat!=='all'&&cat!==r.section)||!(`${r.name||''} ${keys[r.section]} ${r.lvl}`).toLowerCase().includes(q))return false;
+  if(r.village!==selectedVillage||!ks.includes(r.section)||(cat!=='all'&&cat!==r.section)||!(`${r.name||''} ${keys[r.section]} ${r.lvl}`).toLowerCase().includes(q))return false;
   if(quickfilter==='upgrading')return r.timer>0;
   if(quickfilter==='not-maxed'){const max=autoMaxLevel(r,ctx);return Number.isFinite(max)&&max>0&&r.lvl<max}
   return true;
@@ -770,14 +834,14 @@ async function quickPlan(k,i){
  const level=catalogLevelsForItem(item).find((entry,index)=>detailLevelNumber(entry,index)===target)||null;
  const costs=level?detailCostValues(level):null,duration=level?detailDurationSeconds(level):null;
  const knownCosts=costs?.length?costs:null,automaticData=!!level&&!!knownCosts&&duration!==null;
- meta.plans.push({id:Date.now(),done:false,name:r.name||keys[k],level:r.lvl,target,builder:'',start:'',costs:knownCosts,durationSeconds:duration,note:automaticData?'Aus Gebäudeübersicht vorgemerkt':!catalogReady?`Katalogdaten konnten nicht geladen werden: ${gameCatalogError||'unbekannter Fehler'}`:'Kosten oder Dauer für das Ziel-Level nicht verfügbar'});
+ meta.plans.push({id:Date.now(),done:false,name:r.name||keys[k],level:r.lvl,target,builder:'',start:'',village:r.village,costs:knownCosts,durationSeconds:duration,note:automaticData?'Aus Gebäudeübersicht vorgemerkt':!catalogReady?`Katalogdaten konnten nicht geladen werden: ${gameCatalogError||'unbekannter Fehler'}`:'Kosten oder Dauer für das Ziel-Level nicht verfügbar'});
  saveMeta();renderPlans();
  alert(automaticData?'Nächstes Level mit Kosten und Dauer wurde im Planer vorgemerkt.':'Nächstes Level wurde vorgemerkt; Kosten oder Dauer waren nicht vollständig verfügbar.');
 }
 function changeLevel(k,i,v,max){if(!data[k]?.[i])return;const level=Number(v),cap=Number(max);if(!Number.isInteger(level)||level<0||(Number.isFinite(cap)&&cap>0&&level>cap)){alert(Number.isFinite(cap)&&cap>0?`Level muss zwischen 0 und ${cap} liegen.`:'Bitte ein gültiges Level ab 0 eingeben.');update();return}data[k][i].lvl=level;localStorage.setItem(DATA,JSON.stringify(data));buildRows();update()}function changeNote(k,i,v){let z=meta.items[k+':'+i]||{};z.note=v;meta.items[k+':'+i]=z;saveMeta()}
 
 function autoAssignBuilders(){let n={home:0,builder:0};timers().forEach(r=>{let k=key(r);if(meta.builders[k])return;let v=r.village==='builder'?'builder':'home';n[v]++;meta.builders[k]=v==='builder'?'Vorschlag Bauarbeiterbasis '+n[v]:'Vorschlag Bauarbeiter '+n[v]});saveMeta();renderBuilders()}function renderBuilders(){let t=timers();document.getElementById('builderassign').innerHTML=t.length?'<div class="actions" style="margin-bottom:12px"><button class="btn gold" onclick="autoAssignBuilders()">Automatisch zuordnen (Vorschläge)</button></div>'+t.map(r=>`<div class="rowitem split"><div><b>${esc(r.name||keys[r.section])}</b><br><small>${esc(village(r.section)==='builder'?'Bauarbeiterbasis':'Heimatdorf')} · Level ${r.lvl} · Timer-Rohwert ${Number(r.timer).toLocaleString('de-DE')}</small></div><input class="field" style="max-width:220px" placeholder="Bauarbeiter-Zuordnung" value="${esc(meta.builders[key(r)]||'')}" onchange="setBuilder('${r.section}',${r.index},this.value)"></div>`).join(''):'<div class="empty">Keine Timer zum Zuordnen vorhanden.</div>'}function setBuilder(k,i,v){let r=rows.find(x=>x.section===k&&x.index===i);if(!r)return;meta.builders[key(r)]=v;saveMeta()}
-function addPlan(){let name=document.getElementById('planname').value.trim();if(!name)return alert('Bitte einen Namen für das Upgrade eingeben.');let current=Number(document.getElementById('planlevel').value),target=Number(document.getElementById('plantarget').value);if(document.getElementById('plantarget').value&&document.getElementById('planlevel').value&&target<=current)return alert('Das Ziel-Level muss höher als das aktuelle Level sein.');meta.plans.push({id:Date.now(),done:false,name,level:document.getElementById('planlevel').value,target:document.getElementById('plantarget').value,builder:document.getElementById('planbuilder').value,start:document.getElementById('planstart').value,note:document.getElementById('plannote').value,costs:null,durationSeconds:null});saveMeta();renderPlans();['planname','planlevel','plantarget','planbuilder','planstart','plannote'].forEach(id=>document.getElementById(id).value='')}
+function addPlan(){let name=document.getElementById('planname').value.trim();if(!name)return alert('Bitte einen Namen für das Upgrade eingeben.');let current=Number(document.getElementById('planlevel').value),target=Number(document.getElementById('plantarget').value);if(document.getElementById('plantarget').value&&document.getElementById('planlevel').value&&target<=current)return alert('Das Ziel-Level muss höher als das aktuelle Level sein.');meta.plans.push({id:Date.now(),done:false,name,level:document.getElementById('planlevel').value,target:document.getElementById('plantarget').value,builder:document.getElementById('planbuilder').value,start:document.getElementById('planstart').value,village:selectedVillage,note:document.getElementById('plannote').value,costs:null,durationSeconds:null});saveMeta();renderPlans();['planname','planlevel','plantarget','planbuilder','planstart','plannote'].forEach(id=>document.getElementById(id).value='')}
 function renderPlanTotals(plans){
  const active=plans.filter(plan=>!plan.done),knownCosts=active.filter(plan=>Array.isArray(plan.costs)),knownTimes=active.filter(plan=>Number.isFinite(plan.durationSeconds)&&plan.durationSeconds>=0),totals=new Map();
  knownCosts.forEach(plan=>plan.costs.forEach(cost=>{
@@ -793,7 +857,7 @@ function renderPlanTotals(plans){
  document.getElementById('plantotals').innerHTML=`<div class="plan-totals"><div class="plan-total"><b>Geplante Gesamtkosten <small>(${known})</small></b><div class="plan-costs">${costHtml}</div></div><div class="plan-total"><b>Upgradezeit gesamt (aufsummiert) <small>(${timeCoverage})</small></b><div>${duration}</div></div></div><p class="mini">Summen berücksichtigen nur offene Planungen mit verfügbaren Katalogdaten.</p>`;
 }
 function renderPlans(){
- const plans=meta.plans||[];
+ const plans=(meta.plans||[]).filter(plan=>(plan.village||'home')===selectedVillage);
  renderPlanTotals(plans);
  document.getElementById('plans').innerHTML=plans.length?plans.map(plan=>{
   const costs=Array.isArray(plan.costs)?plan.costs.filter(cost=>cost&&typeof cost==='object').map(cost=>detailCostItem(cost.amount,cost.resource)).join('')||'–':'nicht ermittelt';
@@ -804,180 +868,5 @@ function renderPlans(){
 function togglePlan(id){let x=meta.plans.find(x=>x.id===id);if(x)x.done=!x.done;saveMeta();renderPlans()}function removePlan(id){meta.plans=meta.plans.filter(x=>x.id!==id);saveMeta();renderPlans()}
 
 load();
-let trackerBridgeSeenAt='',trackerBridgeRunning=false,trackerBridgeCandidate='',trackerBridgeCandidateCount=0;
-function normalizeTrackerText(value){
- return String(value||'').toLowerCase()
-  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-  .replace(/[^a-z0-9]+/gi,' ').replace(/\s+/g,' ').trim();
-}
-function extractObservedLevel(text){
- const normalizeDigits=value=>value.replace(/[Il|]/g,'1').replace(/[Gg]/g,'6').replace(/[^0-9]/g,'');
- const levelValue='([0-9Il|](?:[\\s&.,\'’`´-]{0,2}[0-9Il|Gg])?)';
- const targetContext=/\b(?:auf|to)\s+(?:level|lvl|stufe)\b/i.test(text);
- const targetMatch=text.match(new RegExp('\\b(?:auf|to)\\s+(?:level|lvl|stufe)\\s*'+levelValue+'\\s*(?=(?:verbessern|upgrade|aufrüsten|aufwerten)\\b)','i'));
- if(targetMatch){
-  const digits=normalizeDigits(targetMatch[1]);
-  const target=Number(digits);
-  return Number.isInteger(target)&&target>1?{level:target-1,target,source:'upgrade-target',ocrNumber:target,ocrDigits:digits.length}:null;
- }
- if(targetContext)return null;
- const currentMatch=text.match(new RegExp('\\b(?:level|lvl|stufe)\\s*[:#.]?\\s*'+levelValue+'\\b','i'));
- if(!currentMatch)return null;
- const digits=normalizeDigits(currentMatch[1]);
- const level=Number(digits);
- return Number.isInteger(level)&&level>0?{level,target:level+1,source:'current-level',ocrNumber:level,ocrDigits:digits.length}:null;
-}
-function levenshteinDistance(a,b){
- if(Math.abs(a.length-b.length)>3)return 4;
- let previous=Array.from({length:b.length+1},(_,i)=>i),current=new Array(b.length+1);
- for(let i=1;i<=a.length;i++){
-  current[0]=i;let rowMinimum=i;
-  for(let j=1;j<=b.length;j++){
-   current[j]=Math.min(current[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));
-   rowMinimum=Math.min(rowMinimum,current[j]);
-  }
-  if(rowMinimum>3)return 4;
-  [previous,current]=[current,previous];
- }
- return previous[b.length];
-}
-function fuzzyNameScore(ocrText,name){
- const nameWords=normalizeTrackerText(name).split(' ').filter(Boolean),compactName=nameWords.join('');
- if(compactName.length<8||!nameWords.length)return 0;
- const maxEdits=compactName.length>=18?3:compactName.length>=10?2:1,words=ocrText.split(' ');let best=0;
- for(let start=0;start<words.length;start++)for(let count=Math.max(1,nameWords.length-1);count<=nameWords.length+1&&start+count<=words.length;count++){
-  const candidate=words.slice(start,start+count).join('');
-  if(Math.abs(candidate.length-compactName.length)>maxEdits)continue;
-  const distance=levenshteinDistance(compactName,candidate);
-  if(distance<=maxEdits)best=Math.max(best,1-distance/Math.max(compactName.length,candidate.length));
- }
- return best;
-}
-async function resolveOcrItem(text){
- if(!data)return null;
- if(!gameCatalog.size)await loadGameCatalog();
- const normalized=normalizeTrackerText(text);
- const candidates=[];
- rows.forEach(r=>{
-  const catalogName=catalogItem(r.section,r.id)?.name;
-  const namesToCheck=[r.name,wikiItemName(r),catalogName,names[r.section]?.[r.id],...(OCR_NAME_ALIASES[r.section+':'+Number(r.id)]||[])]
-   .filter((name,index,all)=>typeof name==='string'&&name.trim()&&all.indexOf(name)===index);
-  namesToCheck.forEach(name=>{
-   const clean=normalizeTrackerText(name);
-   if(!clean)return;
-   if(normalized.includes(clean)){candidates.push({r,name:name.trim(),matchLength:clean.length,score:1,minimumScore:1});return}
-   const score=fuzzyNameScore(normalized,clean),minimumScore=clean.replace(/\s/g,'').length>=18?.82:clean.replace(/\s/g,'').length>=10?.85:.9;
-   if(score>=minimumScore)candidates.push({r,name:name.trim(),matchLength:clean.length,score,minimumScore});
-  });
- });
- if(!candidates.length)return null;
- candidates.sort((a,b)=>b.score-a.score||b.matchLength-a.matchLength);
- const bestByRow=new Map();candidates.forEach(candidate=>{const rowKey=key(candidate.r),previous=bestByRow.get(rowKey);if(!previous||candidate.score>previous.score||candidate.score===previous.score&&candidate.matchLength>previous.matchLength)bestByRow.set(rowKey,candidate)});
- const bestRows=[...bestByRow.values()].sort((a,b)=>b.score-a.score||b.matchLength-a.matchLength),best=bestRows[0];
- if(bestRows.length>1&&best.score-bestRows[1].score<.08)return {ambiguous:true,matches:bestRows.filter(candidate=>best.score-candidate.score<.08).length};
- const {r}=best;
- let observedLevel=extractObservedLevel(text);
- const item=catalogItem(r.section,r.id);
- const levels=catalogLevelsForItem(item);
- if(observedLevel&&observedLevel.ocrDigits===1){
-  const low=observedLevel.ocrNumber,high=low+10;
-  const hasHighLevel=levels.some((entry,index)=>detailLevelNumber(entry,index)===high);
-  if(hasHighLevel){
-   const savedLevel=Number(r.lvl);
-   const savedTarget=observedLevel.source==='upgrade-target'?savedLevel+1:savedLevel;
-   if(savedTarget===high){
-    observedLevel=observedLevel.source==='upgrade-target'
-     ?{...observedLevel,level:high-1,target:high,ocrNumber:high}
-     :{...observedLevel,level:high,target:high+1,ocrNumber:high};
-   }else if(savedTarget!==low){
-    return {r,levelAmbiguous:true,low,high,confirmedName:r.name||bestRows[0].name};
-   }
-  }
- }
- const observedEntry=observedLevel?levels.find((entry,index)=>detailLevelNumber(entry,index)===(observedLevel.source==='upgrade-target'?observedLevel.target:observedLevel.level))||null:null;
- if(observedLevel&&!observedEntry)return {r,observedLevel:null,invalidLevel:true,confirmedName:r.name||bestRows[0].name};
- const targetEntry=observedLevel?levels.find((entry,index)=>detailLevelNumber(entry,index)===observedLevel.target)||null:null;
- const costs=targetEntry?detailCostValues(targetEntry):null;
- const duration=targetEntry?detailDurationSeconds(targetEntry):null;
- return {r,observedLevel,costs:Array.isArray(costs)&&costs.length?costs:null,duration,confirmedName:r.name||bestRows[0].name};
-}
-async function pollTrackerBridge(){
- if(trackerBridgeRunning)return;
- trackerBridgeRunning=true;
- try{
-  const response=await fetch('http://127.0.0.1:4177/status',{cache:'no-store'});
-  if(!response.ok){
-   document.getElementById('livebridge').textContent='Getrennt';
-   document.getElementById('livebridgemsg').textContent=response.status===403?'Website-Origin nicht freigegeben':'Desktop-App antwortet mit HTTP '+response.status;
-   return;
-  }
-  const upgrade=await response.json();
-  document.getElementById('livebridge').textContent=upgrade.detected?'OCR':'Verbunden';
-  document.getElementById('livebridgemsg').textContent=upgrade.detected?'Gebäude-Infofeld wird ausgewertet':'Desktop-App aktiv · warte auf Gebäude-Infofeld';
-  if(!upgrade.detected){
-   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
-   return;
-  }
-  if(!upgrade.detectedAt||upgrade.detectedAt===trackerBridgeSeenAt)return;
-  trackerBridgeSeenAt=upgrade.detectedAt;
-  if(!data){
-   document.getElementById('livebridgemsg').textContent='Zuerst Spielerexport importieren';
-   return;
-  }
-  const timer=String(upgrade.timer||'').trim();
-  const text=String(upgrade.text||'').replace(/\s+/g,' ').trim();
-  const resolved=await resolveOcrItem(text);
-  if(resolved?.ambiguous){
-   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
-   document.getElementById('livebridgemsg').textContent='Gebäudetyp mehrfach vorhanden – keine automatische Änderung';
-   return;
-  }
-  if(!resolved){
-   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
-   document.getElementById('livebridgemsg').textContent='Gebäudename im Infofeld nicht sicher erkannt';
-   return;
-  }
-  if(resolved.invalidLevel){
-   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
-   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} erkannt – Level passt nicht zum Katalog`;
-   return;
-  }
-  if(resolved.levelAmbiguous){
-   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
-   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName}: Level ${resolved.low} oder ${resolved.high} – Export-Level prüfen`;
-   return;
-  }
-  const levelInfo=resolved.observedLevel;
-  if(!levelInfo){
-   trackerBridgeCandidate='';trackerBridgeCandidateCount=0;
-   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} erkannt – Level im Infofeld nicht lesbar`;
-   return;
-  }
-  const signature='ocr:'+resolved.r.section+':'+resolved.r.id+':'+levelInfo.level+':'+levelInfo.target;
-  if(signature===trackerBridgeCandidate)trackerBridgeCandidateCount++;
-  else{trackerBridgeCandidate=signature;trackerBridgeCandidateCount=1}
-  document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} · Level ${levelInfo.level} · Bestätigung ${Math.min(trackerBridgeCandidateCount,3)}/3`;
-  if(trackerBridgeCandidateCount<3)return;
-
-  const trackedItem=data[resolved.r.section]?.[resolved.r.index];
-  if(trackedItem&&Number(trackedItem.lvl)!==levelInfo.level){
-   trackedItem.lvl=levelInfo.level;
-   localStorage.setItem(DATA,JSON.stringify(data));
-   buildRows();update();
-  }
-  const exists=(meta.plans||[]).some(plan=>plan.sourceSignature===signature);
-  if(!exists){
-   meta.plans.push({id:Date.now(),done:false,name:resolved.confirmedName,level:levelInfo.level,target:levelInfo.target,builder:'',start:'',costs:resolved.costs||null,durationSeconds:resolved.duration??null,note:['Level dreimal aus dem Gebäude-Infofeld gelesen','Automatisch aus lokaler Clash-Ninja-Live-OCR','Timer: '+(timer||'nicht erkannt'),'OCR-Kontext: '+(text||'nicht verfügbar')].join(' · '),sourceSignature:signature});
-   saveMeta();renderPlans();
-   document.getElementById('livebridgemsg').textContent=`${resolved.confirmedName} · Level ${levelInfo.level} übernommen und Upgrade vorgemerkt`;
-  }
- }catch(e){
-  document.getElementById('livebridge').textContent='Getrennt';
-  document.getElementById('livebridgemsg').textContent='App nicht erreichbar oder lokaler Zugriff blockiert: '+(e?.message||String(e));
- }finally{
-  trackerBridgeRunning=false;
- }
-}
-setInterval(pollTrackerBridge,3000);
-pollTrackerBridge();
+updateVillageSwitch();
 setInterval(()=>{if(data){let t=timers();document.getElementById('timers').innerHTML=t.length?t.slice(0,5).map(timerHtml).join():'<div class="empty">Keine Timer erkannt.</div>';document.getElementById('alltimers').innerHTML=t.length?t.map(timerHtml).join():'<div class="empty">Keine laufenden Timer vorhanden.</div>'; }},30000);

@@ -1,9 +1,5 @@
 CLASH NINJA STYLE – VERSION 1.8.13
 
-Änderungen in 1.8.13
-- OCR-Namensabgleich toleriert kleine Schreibfehler und abweichende Wortabstände
-- Bei ähnlich guten Treffern bleibt die automatische Übernahme aus Sicherheitsgründen gesperrt
-
 Änderungen in 1.8.12
 - Importfehler behoben, der nach dem Laden der JSON-Datei durch eine fehlende Dashboard-Referenz ausgelöst wurde
 - JSON-Import akzeptiert UTF-8/UTF-16-Dateien, Backup-Wrapper, playerData/data-Wrapper und eingefügte JSON-Codeblöcke
@@ -52,10 +48,8 @@ Projektstruktur
 Installation
 Für Vercel index.html, app.js und style.css gemeinsam im Projekt-Hauptordner bereitstellen. Ein data/-Ordner ist nicht erforderlich.
 
-Live-Erkennung mit Clash Ninja Live
-Die Windows-App kann erkannte Gebäude-Level an den Tracker auf diesem Gerät senden. Die App stellt dafür ausschließlich lokal `http://127.0.0.1:4177/status` bereit; der Browser fragt diesen Endpunkt alle drei Sekunden ab. Als Website-Origin ist `https://clash-of-clans-tracker-six.vercel.app` zugelassen. Bei lokaler Dateinutzung ist zusätzlich der Browser-Origin `null` erlaubt.
-
-Zum Verwenden zuerst die Windows-App starten, in ihr das Clash-of-Clans-Fenster erfassen und dann diese Tracker-Website öffnen. Anschließend den Dorfexport im Tracker importieren und im Spiel ein Gebäude auswählen, sodass dessen Name und Level im Infofeld stehen. Der Tracker übernimmt ein Level nur nach drei übereinstimmenden OCR-Lesungen, wenn genau ein importierter Eintrag passt und das Level in den Katalogdaten existiert. Unklare oder mehrdeutige Treffer verändern den Spielstand nicht. Die OCR-Daten verlassen den Rechner nicht.
+Die Website läuft eigenständig im Browser und benötigt keine zusätzliche Desktop-App.
+Über den Schalter oben rechts wechselst du zwischen Heimatbasis und Nachtbasis. Dashboard, Listen, Timer und Planer zeigen jeweils nur Daten der ausgewählten Basis; die Auswahl wird lokal gespeichert.
 
 Wiki-Daten
 Die App lädt Leveltabellen über die öffentliche MediaWiki-API von https://clashofclans.fandom.com/. Die Wiki-Seiten sind community-gepflegt, nicht offiziell, und können sich ändern. Zum Aktualisieren im Bereich „Daten“ auf „Wiki-Maximallevel neu laden“ klicken. Die erste Aktualisierung benötigt eine Internetverbindung. Der Cache ist ein Abruf-Snapshot (kein Veröffentlichungsdatum des Wikis), wird höchstens 24 Stunden verwendet und kann bei einem Netzwerkausfall als veraltet gekennzeichnet angezeigt werden. Wenn weder Wiki noch Cache verfügbar sind, zeigt die App keine Maximallevel an.
